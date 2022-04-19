@@ -143,12 +143,15 @@ function update_value(U, i, j, k, sg::StateGrid, v::Vehicle)
     xi_k = Int(sign(cos(theta_k)))
     nu_k = Int(sign(sin(theta_k)))
 
+    # ISSUE: need to make sure -180deg and +177deg are linked correctly
+    #   k=1 and k=length-1
+
     ip = i + xi_k
     in = i - xi_k
     jp = j + nu_k
     jn = j - nu_k
-    k == length(sg.theta_grid) ? kp = 1 : kp = k + 1
-    k == 1 ? kn = length(sg.theta_grid) : kn = k - 1
+    k == length(sg.theta_grid)-1 ? kp = 1 : kp = k + 1
+    k == 1 ? kn = length(sg.theta_grid)-1 : kn = k - 1
 
     u_ip = U[ip,j,k] 
     u_in = U[in,j,k]
@@ -210,8 +213,8 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, v::Vehicle)
                     end
                 end
             end
+
             Up[:,:,end] = deepcopy(Up[:,:,1])
-            Up[:,:,end] = Up[end:-1:1,:,end]
 
             # compare U and Up to check convergence
             dU = Up - U
@@ -436,13 +439,15 @@ end
 
 # 2) PARAMETERS --- --- ---
 # parameters that determine behavior:
+#   - c_vf
+#   - c_vb
 #   - h_xy
 #   - h_theta
 #   - dt
 
 # vehicle parameters
 marmot = Vehicle(1.5, 0.75, 0.475, 0.324)   
-unit_car = Vehicle(1.0, 0.95, 0.5, 1.0)   
+unit_car = Vehicle(1.0, 1.0, 0.5, 1.0)   
 
 # define workspace
 W_x = [-10, 10]
@@ -465,8 +470,8 @@ O_set = [O1_set]
 # O_set = []
 
 # initialize state grid /// /// /// /// /// /// ///
-my_h_xy = 0.5
-my_h_theta = deg2rad(5)
+my_h_xy = 0.25
+my_h_theta = deg2rad(4)
 
 sg = StateGrid(my_h_xy, 
                 my_h_theta,
@@ -482,6 +487,10 @@ du_tol = 0.01
 max_reps = 100
 @time U = solve_HJB_PDE(du_tol, max_reps, sg, unit_car)
 
+dt = 0.1
+
+# ISSUE: value estimate not matching actual path length (time)
+#   - is this ok/expected? look into further
 
 # 4) PLOTS --- --- ---
 W_x_pts = [W_x[1],W_x[2],W_x[2],W_x[1],W_x[1]]
@@ -494,80 +503,76 @@ O1_x_pts = [O1_x[1],O1_x[2],O1_x[2],O1_x[1],O1_x[1]]
 O1_y_pts = [O1_y[1],O1_y[1],O1_y[2],O1_y[2],O1_y[1]]
 
 # plot u(x,y,0) as color map
-p1_k = Int(round(length(sg.theta_grid)/2,digits=0))
-p1 = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,p1_k]), clim=(0,20),
-            aspect_ratio=:equal, size=(700,600),
-            xlabel="x-axis", ylabel="y-axis", title="HJB Value Function: u(x, y, theta=0)")
+for k_plot in LinRange(1, length(sg.theta_grid), 21)
+    k_plot= Int(round(k_plot, digits=0))
+    theta_k = round(rad2deg(sg.theta_grid[k_plot]), digits=4)
 
-plot!(p1, W_x_pts, W_y_pts, linewidth=2, linecolor=:black, label="Workspace")
-plot!(p1, T_x_pts, T_y_pts, linewidth=2, linecolor=:green, label="Target Set")
-display(p1)
+    pk = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,k_plot]), clim=(0,20),
+                aspect_ratio=:equal, size=(700,600),
+                xlabel="x-axis", ylabel="y-axis", title="HJB Value Function: u(x, y, theta=$theta_k)")
 
-# plot u(x,y,pi/2) as color map
-p2_k = Int(round(length(sg.theta_grid)*3/4,digits=0))
-p2 = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,p2_k]), clim=(0,20),
-            aspect_ratio=:equal, size=(700,600),
-            xlabel="x-axis", ylabel="y-axis", title="HJB Value Function: u(x, y, theta=pi/2)")
+    plot!(pk, W_x_pts, W_y_pts, linewidth=2, linecolor=:black, label="Workspace")
+    plot!(pk, T_x_pts, T_y_pts, linewidth=2, linecolor=:green, label="Target Set")
+    plot!(pk, O1_x_pts, O1_y_pts, linewidth=2, linecolor=:red, label="Obstacle 1")
 
-plot!(p2, W_x_pts, W_y_pts, linewidth=2, linecolor=:black, label="Workspace")
-plot!(p2, T_x_pts, T_y_pts, linewidth=2, linecolor=:green, label="Target Set")
-display(p2)
+    display(pk)
+end
 
-# plot u(x,y,pi/2) as color map
-p3_k = Int(round(length(sg.theta_grid)*5/8,digits=0))
-p3 = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,p3_k]), clim=(0,20),
-            aspect_ratio=:equal, size=(700,600),
-            xlabel="x-axis", ylabel="y-axis", title="HJB Value Function: u(x, y, theta=pi/4)")
+theta_wrap = deg2rad(180)
+wrap_around = [[-8, -8, theta_wrap],
+                [-8, -6, theta_wrap],
+                [-8, -4, theta_wrap],
+                [-8, -2, theta_wrap],
+                [-8, 0, theta_wrap],
+                [-8, 2, theta_wrap],
+                [-8, 4, theta_wrap],
+                [-8, 6, theta_wrap],
+                [-8, 8, theta_wrap],
+                [-6, -8, theta_wrap],
+                [-6, 8, theta_wrap],
+                [-4, -8, theta_wrap],
+                [-4, 8, theta_wrap],
+                [-2, -8, theta_wrap],
+                [-2, 8, theta_wrap],
+                [0, -8, theta_wrap],
+                [0, 8, theta_wrap],
+                [2, -8, theta_wrap],
+                [2, 8, theta_wrap],
+                [4, -8, theta_wrap],
+                [4, 8, theta_wrap],
+                [6, -8, theta_wrap],
+                [6, 8, theta_wrap],
+                [8, -8, theta_wrap],
+                [8, -6, theta_wrap],
+                [8, -4, theta_wrap],
+                [8, -2, theta_wrap],
+                [8, 0, theta_wrap],
+                [8, 2, theta_wrap],
+                [8, 4, theta_wrap],
+                [8, 6, theta_wrap],
+                [8, 8, theta_wrap]]
 
-plot!(p3, W_x_pts, W_y_pts, linewidth=2, linecolor=:black, label="Workspace")
-plot!(p3, T_x_pts, T_y_pts, linewidth=2, linecolor=:green, label="Target Set")
-display(p3)
+theta_obs = pi/2
+asym_obs = [[-6, -7.5, theta_obs],
+            [-4, -7.5, theta_obs],
+            [-2, -7.5, theta_obs],
+            [0, -7.5, theta_obs],
+            [2, -7.5, theta_obs],
+            [-5, -5.5, theta_obs],
+            [-3, -5.5, theta_obs],
+            [-1, -5.5, theta_obs],
+            [1, -5.5, theta_obs],
+            [-4, -4.5, theta_obs],
+            [-2, -4.5, theta_obs],
+            [0, -4.5, theta_obs]]
+
+initial_poses = asym_obs
 
 # plot optimal path from y_0 to target set
-p_path = plot(aspect_ratio=:equal, size=(700,600))
+p_path = plot(aspect_ratio=:equal, size=(700,600), title="HJB Path Planner")
 plot!(p_path, W_x_pts, W_y_pts, linewidth=2, linecolor=:black, label="Workspace")
 plot!(p_path, T_x_pts, T_y_pts, linewidth=2, linecolor=:green, label="Target Set")
 plot!(p_path, O1_x_pts, O1_y_pts, linewidth=2, linecolor=:red, label="Obstacle 1")
-
-dt = 0.1
-
-# wrap_around = [[-8, -8, pi/2],
-#                 [-4, -8, pi/2],
-#                 [0, -8, pi/2],
-#                 [4, -8, pi/2],
-#                 [8, -8, pi/2],
-#                 [8, -4, pi/2],
-#                 [8, 0, pi/2],
-#                 [8, 4, pi/2],
-#                 [8, 8, pi/2],
-#                 [4, 8, pi/2],
-#                 [0, 8, pi/2],
-#                 [-2, 8, pi/2],
-#                 [-4, 8, pi/2],
-#                 [-6, 8, pi/2],
-#                 [-8, 8, pi/2],
-#                 [-8, 6, pi/2],
-#                 [-8, 4, pi/2],
-#                 [-8, 2, pi/2],
-#                 [-8, 0, pi/2],
-#                 [-8, -4, pi/2]]
-
-asym_obs = [[-8, -8, pi/2],
-            [-6, -8, pi/2],
-            [-4, -8, pi/2],
-            [-2, -8, pi/2],
-            [0, -8, pi/2],
-            [2, -8, pi/2],
-            [4, -8, pi/2],
-            [-5, -6, pi/2],
-            [-3, -6, pi/2],
-            [-1, -6, pi/2],
-            [1, -6, pi/2],
-            [-4, -4.5, pi/2],
-            [-2, -4.5, pi/2],
-            [0, -4.5, pi/2]]
-
-initial_poses = asym_obs
 
 for y_0 in initial_poses
     (y_path, u_path) = find_path(y_0, U, T_set, dt, sg, unit_car)
