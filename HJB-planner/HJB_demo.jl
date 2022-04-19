@@ -22,7 +22,6 @@ using Plots
 # - trace optimal paths using characteristic curves
 # - make obstacle cost higher, just adjust color scale on plot
 
-
 # 1) DEFINITIONS --- --- ---
 
 # define discretized grid struct
@@ -35,7 +34,8 @@ struct StateGrid
 end
 
 struct Vehicle
-    c_v::Float64    # max speed [m/s]
+    c_vf::Float64   # max forward speed [m/s]
+    c_vb::Float64   # max backward speed [m/s]
     c_phi::Float64  # max steering angle [rad]
     l::Float64      # wheelbase [m]
 end
@@ -45,7 +45,7 @@ end
 function G_p1_ijk(theta_k, u_ip, u_jp, u_kp, u_kn, sg::StateGrid, v::Vehicle)
     rho = v.l/tan(v.c_phi)
 
-    num = sg.h_xy/v.c_v + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp + sg.h_xy/(rho*sg.h_theta)*min(u_kp, u_kn)
+    num = sg.h_xy/v.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp + sg.h_xy/(rho*sg.h_theta)*min(u_kp, u_kn)
     den = abs(cos(theta_k)) + abs(sin(theta_k)) + sg.h_xy/(rho*sg.h_theta)
     G_p1 = num/den
 
@@ -54,7 +54,7 @@ end
 
 # (eq 31)
 function F_p1_ijk(theta_k, u_ip, u_jp, sg::StateGrid, v::Vehicle)
-    num = sg.h_xy/v.c_v + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp
+    num = sg.h_xy/v.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp
     den = abs(cos(theta_k)) + abs(sin(theta_k))
     F_p1 = num/den
 
@@ -65,7 +65,7 @@ end
 function G_n1_ijk(theta_k, u_in, u_jn, u_kp, u_kn, sg::StateGrid, v::Vehicle)
     rho = v.l/tan(v.c_phi)
 
-    num = sg.h_xy/v.c_v + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn + sg.h_xy/(rho*sg.h_theta)*min(u_kp, u_kn)
+    num = sg.h_xy/v.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn + sg.h_xy/(rho*sg.h_theta)*min(u_kp, u_kn)
     den = abs(cos(theta_k)) + abs(sin(theta_k)) + sg.h_xy/(rho*sg.h_theta)
     G_n1 = num/den
 
@@ -74,7 +74,7 @@ end
 
 # (eq 33)
 function F_n1_ijk(theta_k, u_in, u_jn, sg::StateGrid, v::Vehicle)
-    num = sg.h_xy/v.c_v + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn
+    num = sg.h_xy/v.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn
     den = abs(cos(theta_k)) + abs(sin(theta_k))
     F_n1 = num/den
 
@@ -227,6 +227,13 @@ end
 
 # interpolate U to return a value for any point (x,y,theta)
 function interp_value(y, U, sg::StateGrid)
+    # adjust theta within bounds
+    if y[3] > pi
+        y[3] -= 2*pi
+    elseif y[3] < -pi
+        y[3] += 2*pi
+    end
+
     # implements trilinear interpolation from Wikipedia
     if y[1] in sg.x_grid
         i_0 = indexin(y[1], sg.x_grid)[1]
@@ -248,11 +255,11 @@ function interp_value(y, U, sg::StateGrid)
 
     i_1 = i_0 + 1
     j_1 = j_0 + 1
-    k_0 == length(sg.theta_grid) ? k_1 = 1 : k_1 = k_0 + 1
+    k_0 == length(sg.theta_grid) ? k_1 = 1 : k_1 = k_0 + 1  # ISSUE
 
     x_0 = sg.x_grid[i_0]
     y_0 = sg.y_grid[j_0]
-    theta_0 = sg.theta_grid[k_0]
+    theta_0 = sg.theta_grid[k_0]    # ISSUE: k_0 = 0 somehow
 
     x_1 = sg.x_grid[i_1]
     y_1 = sg.y_grid[j_1]
@@ -285,7 +292,7 @@ function interp_value(y, U, sg::StateGrid)
 end
 
 function find_path(y_0, U, T_set, dt, sg::StateGrid, v::Vehicle)
-    max_steps = 1000
+    max_steps = 5000
 
     if typeof(y_0) != Vector{Float64}
         y_0 = convert(Vector{Float64}, y_0)
@@ -312,7 +319,9 @@ function find_path(y_0, U, T_set, dt, sg::StateGrid, v::Vehicle)
         y_k = deepcopy(y_k1)
     end
 
-    return y_path, u_path
+    println("steps in path: ", step)
+
+    return y_path, u_path, step
 end
 
 # ISSUE: problem with steering (dt too large?, interp not good?)
@@ -341,6 +350,27 @@ end
 #   - assymetric obstacles:
 #       - U gets stuck temporarily at certain values during computation
 
+#   - when max_steps reached for seemingly short path, it's because speed is switching
+#       back and forth, while steering remains fixed to one side
+
+#   LOOK AT FURTHER:
+#   - speed input chooses first, based on value gradient at the given theta, and always chooses
+#       speed direction that will push downhill *within the current theta slice*
+#   - may cause issues where best action in 3D gradient is good in theta-dimension, but bad in
+#       xy-dimension. This action won't be chosen, because speed input chooses before steering input
+
+#   - may have separate/similar issue with chattering around saddle/minima
+
+#   - issue with theta wrapping when calculating action/du_dtheta?
+#       - seems like it has trouble when theta=+pi
+#       - RK4 simulates to theta outside bounds, then doesn't know what to do?
+#       - this solved some problems, but still issues around +/-pi in certain areas of workspace
+#       - seems to occur when approaching +pi from <+pi, and driving in reverse
+
+#   - did changing fwd/bkwd speed get rid of minima behind obstacle? not a great solution if so...
+
+# NEED TO UNDERSTAND FORWARD/BACKWARD CHATTERING PROBLEM
+
 # calculates optimal action as a function of state
 function optimal_action(y, U, sg::StateGrid, v::Vehicle)
     # adjust position when near edge for boundary problems
@@ -362,24 +392,17 @@ function optimal_action(y, U, sg::StateGrid, v::Vehicle)
     du_dtheta = (interp_value(y+[0,0,sg.h_theta], U, sg) - interp_value(y-[0,0,sg.h_theta], U, sg))/(2*sg.h_theta)
 
     # calculate optimal action
-    if abs(du_dx*cos(y[3]) + du_dy*sin(y[3])) > 0.01
-        a_v_opt_sgn = -sign(du_dx*cos(y[3]) + du_dy*sin(y[3]))
-    else
-        a_v_opt_sgn = 1
-    end
+    A = [[v.c_vf, 0],
+        [v.c_vf, v.c_phi],
+        [v.c_vf, -v.c_phi],
+        [-v.c_vb, 0],
+        [-v.c_vb, v.c_phi],
+        [-v.c_vb, -v.c_phi]]
 
-    if abs(du_dtheta) > 0.01
-        a_phi_opt_sgn = -sign(du_dtheta)*a_v_opt_sgn
-    else
-        a_phi_opt_sgn = 0
-    end
+    HJB_min(a) = a[1]*(du_dx*cos(y[3]) + du_dy*sin(y[3]) + du_dtheta*(1/v.l)*tan(a[2]))
+    a_opt = argmin(HJB_min, A)
 
-    a_v_opt = a_v_opt_sgn*v.c_v
-    a_phi_opt = a_phi_opt_sgn*v.c_phi
-
-    u_opt = [a_v_opt, a_phi_opt]
-
-    return u_opt
+    return a_opt
 end
 
 # equations of motion for 3 DoF kinematic bicycle model
@@ -400,15 +423,26 @@ function runge_kutta_4(EoM::Function, x_k, u, dt, param)
 
     x_k1 = x_k + (1/6)*dt*(w1 + 2*w2 + 2*w3 + w4)
 
+    # adjust theta within bounds
+    if x_k1[3] > pi
+        x_k1[3] -= 2*pi
+    elseif x_k1[3] < -pi
+        x_k1[3] += 2*pi
+    end
+
     return x_k1
 end
 
 
 # 2) PARAMETERS --- --- ---
+# parameters that determine behavior:
+#   - h_xy
+#   - h_theta
+#   - dt
 
 # vehicle parameters
-marmot = Vehicle(1.5, 0.475, 0.324)   
-unit_car = Vehicle(1.0, 0.5, 1.0)   
+marmot = Vehicle(1.5, 0.75, 0.475, 0.324)   
+unit_car = Vehicle(1.0, 0.95, 0.5, 1.0)   
 
 # define workspace
 W_x = [-10, 10]
@@ -431,8 +465,8 @@ O_set = [O1_set]
 # O_set = []
 
 # initialize state grid /// /// /// /// /// /// ///
-my_h_xy = 0.25
-my_h_theta = deg2rad(2)
+my_h_xy = 0.5
+my_h_theta = deg2rad(5)
 
 sg = StateGrid(my_h_xy, 
                 my_h_theta,
@@ -447,11 +481,6 @@ println("\nstart --- --- ---")
 du_tol = 0.01
 max_reps = 100
 @time U = solve_HJB_PDE(du_tol, max_reps, sg, unit_car)
-
-dt = 0.05
-
-y_0 = [0, -8, pi/2]
-(y_path, u_path) = find_path(y_0, U, T_set, dt, sg, unit_car)
 
 
 # 4) PLOTS --- --- ---
@@ -499,5 +528,63 @@ p_path = plot(aspect_ratio=:equal, size=(700,600))
 plot!(p_path, W_x_pts, W_y_pts, linewidth=2, linecolor=:black, label="Workspace")
 plot!(p_path, T_x_pts, T_y_pts, linewidth=2, linecolor=:green, label="Target Set")
 plot!(p_path, O1_x_pts, O1_y_pts, linewidth=2, linecolor=:red, label="Obstacle 1")
-plot!(p_path, getindex.(y_path,1), getindex.(y_path,2), linewidth=2, label="Optimal Path")
+
+dt = 0.1
+
+# wrap_around = [[-8, -8, pi/2],
+#                 [-4, -8, pi/2],
+#                 [0, -8, pi/2],
+#                 [4, -8, pi/2],
+#                 [8, -8, pi/2],
+#                 [8, -4, pi/2],
+#                 [8, 0, pi/2],
+#                 [8, 4, pi/2],
+#                 [8, 8, pi/2],
+#                 [4, 8, pi/2],
+#                 [0, 8, pi/2],
+#                 [-2, 8, pi/2],
+#                 [-4, 8, pi/2],
+#                 [-6, 8, pi/2],
+#                 [-8, 8, pi/2],
+#                 [-8, 6, pi/2],
+#                 [-8, 4, pi/2],
+#                 [-8, 2, pi/2],
+#                 [-8, 0, pi/2],
+#                 [-8, -4, pi/2]]
+
+asym_obs = [[-8, -8, pi/2],
+            [-6, -8, pi/2],
+            [-4, -8, pi/2],
+            [-2, -8, pi/2],
+            [0, -8, pi/2],
+            [2, -8, pi/2],
+            [4, -8, pi/2],
+            [-5, -6, pi/2],
+            [-3, -6, pi/2],
+            [-1, -6, pi/2],
+            [1, -6, pi/2],
+            [-4, -4.5, pi/2],
+            [-2, -4.5, pi/2],
+            [0, -4.5, pi/2]]
+
+initial_poses = asym_obs
+
+for y_0 in initial_poses
+    (y_path, u_path) = find_path(y_0, U, T_set, dt, sg, unit_car)
+    plot!(p_path, getindex.(y_path,1), getindex.(y_path,2), linewidth=2, label="")
+end
+
+# for _ in 1:50
+#     y_0 = [rand(W_x[1]:0.01:W_x[2]), rand(W_y[1]:0.01:W_y[2]), rand(-pi:0.01:pi)]
+#     (y_path, u_path, steps) = find_path(y_0, U, T_set, dt, sg, unit_car)
+#     if steps == 2000
+#         println(y_path[end])
+#         println(u_path[end])
+#         println("")
+#         plot!(p_path, getindex.(y_path,1), getindex.(y_path,2), linewidth=2, color=:red, label="")
+#     else
+#         plot!(p_path, getindex.(y_path,1), getindex.(y_path,2), linewidth=2, color=:blue, label="")
+#     end
+# end
+
 display(p_path)
