@@ -33,13 +33,16 @@ struct Vehicle
     c_vf::Float64   # max forward speed [m/s]
     c_vb::Float64   # max backward speed [m/s]
     c_phi::Float64  # max steering angle [rad]
-    l::Float64      # wheelbase [m]
+    wb::Float64     # wheelbase [m]
+    l::Float64      # length [m]
+    w::Float64      # width [m]
+    b2a::Float64    # rear bumber to rear axle [m]
 end
 
 # finite difference approximations
 # (eq 30)
 function G_p1_ijk(theta_k, u_ip, u_jp, u_kp, u_kn, sg::StateGrid, veh::Vehicle)
-    rho = veh.l/tan(veh.c_phi)
+    rho = veh.wb/tan(veh.c_phi)
 
     num = sg.h_xy/veh.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp + sg.h_xy/(rho*sg.h_theta)*min(u_kp, u_kn)
     den = abs(cos(theta_k)) + abs(sin(theta_k)) + sg.h_xy/(rho*sg.h_theta)
@@ -59,7 +62,7 @@ end
 
 # (eq 32)
 function G_n1_ijk(theta_k, u_in, u_jn, u_kp, u_kn, sg::StateGrid, veh::Vehicle)
-    rho = veh.l/tan(veh.c_phi)
+    rho = veh.wb/tan(veh.c_phi)
 
     num = sg.h_xy/veh.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn + sg.h_xy/(rho*sg.h_theta)*min(u_kp, u_kn)
     den = abs(cos(theta_k)) + abs(sin(theta_k)) + sg.h_xy/(rho*sg.h_theta)
@@ -78,25 +81,30 @@ function F_n1_ijk(theta_k, u_in, u_jn, sg::StateGrid, veh::Vehicle)
 end
 
 # target set checker
-function in_target_set(y, T_xy_set, T_theta_rng)
+function in_target_set(y, T_xy_set, T_theta_rng, veh::Vehicle)
+    # check position of corners
+    veh_corners = pose_to_corners(y, veh)
     rows = [collect(1:size(T_xy_set, 1)); 1]
 
-    for i in 1:size(T_xy_set, 1)
-        i1 = rows[i]
-        i2 = rows[i+1]
+    for c in veh_corners
+        for i in 1:size(T_xy_set, 1)
+            i1 = rows[i]
+            i2 = rows[i+1]
 
-        x1 = T_xy_set[i1,1]
-        y1 = T_xy_set[i1,2]
-        x2 = T_xy_set[i2,1]
-        y2 = T_xy_set[i2,2]
+            x1 = T_xy_set[i1,1]
+            y1 = T_xy_set[i1,2]
+            x2 = T_xy_set[i2,1]
+            y2 = T_xy_set[i2,2]
 
-        val = (y1 - y2)*y[1] + (x2 - x1)*y[2] + x1*y2 - x2*y1
+            val = (y1 - y2)*c[1] + (x2 - x1)*c[2] + x1*y2 - x2*y1
 
-        if val < 0
-            return false
+            if val < 0
+                return false
+            end
         end
     end
 
+    # check orientation
     if y[3] <= minimum(T_theta_rng) || y[3] >= maximum(T_theta_rng)
         return false
     end
@@ -105,32 +113,61 @@ function in_target_set(y, T_xy_set, T_theta_rng)
 end
 
 # obstacle set checker
-function in_obstacle_set(y, O_set)
-    for Oi_set in O_set
-        rows = [collect(1:size(Oi_set, 1)); 1]
+function in_obstacle_set(y, O_set, veh::Vehicle)
+    veh_corners = pose_to_corners(y, veh::Vehicle)
 
-        for i in 1:size(Oi_set, 1)
-            i1 = rows[i]
-            i2 = rows[i+1]
+    for c in veh_corners    
+        for Oi_set in O_set
+            rows = [collect(1:size(Oi_set, 1)); 1]
 
-            x1 = Oi_set[i1,1]
-            y1 = Oi_set[i1,2]
-            x2 = Oi_set[i2,1]
-            y2 = Oi_set[i2,2]
+            ineqs = zeros(Bool, size(Oi_set, 1))
+            for i in 1:size(Oi_set, 1)
+                i1 = rows[i]
+                i2 = rows[i+1]
 
-            val = (y1 - y2)*y[1] + (x2 - x1)*y[2] + x1*y2 - x2*y1
+                x1 = Oi_set[i1,1]
+                y1 = Oi_set[i1,2]
+                x2 = Oi_set[i2,1]
+                y2 = Oi_set[i2,2]
 
-            if val < 0
-                return false
+                val = (y1 - y2)*c[1] + (x2 - x1)*c[2] + x1*y2 - x2*y1
+
+                if val >= 0
+                    ineqs[i] = 1
+                end
+            end
+
+            if all(ineqs) == true
+                return true
             end
         end
     end
 
-    return true
+    return false
+end
+
+# calculates position of corners of rectangular vehicle
+function pose_to_corners(y, veh::Vehicle)
+    x_FR = y[1] + (veh.l - veh.b2a)*cos(y[3]) + (veh.w/2)*sin(y[3])
+    x_FL = y[1] + (veh.l - veh.b2a)*cos(y[3]) - (veh.w/2)*sin(y[3])
+    x_BR = y[1] - veh.b2a*cos(y[3]) + (veh.w/2)*sin(y[3])
+    x_BL = y[1] - veh.b2a*cos(y[3]) - (veh.w/2)*sin(y[3])
+    
+    y_FR = y[2] + (veh.l - veh.b2a)*sin(y[3]) - (veh.w/2)*cos(y[3])
+    y_FL = y[2] + (veh.l - veh.b2a)*sin(y[3]) + (veh.w/2)*cos(y[3])
+    y_BR = y[2] - veh.b2a*sin(y[3]) - (veh.w/2)*cos(y[3])
+    y_BL = y[2] - veh.b2a*sin(y[3]) + (veh.w/2)*cos(y[3])
+    
+    veh_corners = [[x_FR, y_FR],
+                    [x_FL, y_FL],
+                    [x_BR, y_BR],
+                    [x_BL, y_BL]]
+
+    return veh_corners
 end
 
 # initialize value approximations
-function initialize_value_array(sg::StateGrid)
+function initialize_value_array(sg::StateGrid, veh::Vehicle)
     Up = ones(Float64, length(sg.x_grid), length(sg.y_grid), length(sg.theta_grid))
 
     for i in 1:length(sg.x_grid)
@@ -142,10 +179,10 @@ function initialize_value_array(sg::StateGrid)
 
                 y_ijk = [x_i, y_j, theta_k]
 
-                if in_target_set(y_ijk, T_xy_set, T_theta_rng) == true
+                if in_target_set(y_ijk, T_xy_set, T_theta_rng, veh) == true
                     Up[i,j,k] = 0
                 else
-                    Up[i,j,k] = 100
+                    Up[i,j,k] = 50
                 end
             end
         end
@@ -205,7 +242,7 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, veh::Vehicle)
                 [reverse(2:N_x-1), reverse(2:N_y-1), reverse(1:N_theta-1)]]   # BBB
 
     # initialize U and Up
-    (U, Up) = initialize_value_array(sg)
+    (U, Up) = initialize_value_array(sg, veh)
 
     # main function loop
     du_max = maximum(Up)
@@ -224,7 +261,7 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, veh::Vehicle)
 
                         y_ijk = [x_i, y_j, theta_k]
                         
-                        if in_obstacle_set(y_ijk, O_set) == false
+                        if in_obstacle_set(y_ijk, O_set, veh) == false
                             Up[i,j,k] = update_value(U, i, j, k, sg, veh)
                         end
                     end
@@ -325,7 +362,7 @@ function find_path(y_0, U, T_xy_set, dt, sg::StateGrid, veh::Vehicle)
 
     step = 0
     
-    while in_target_set(y_k, T_xy_set, T_theta_rng) == false && step < max_steps
+    while in_target_set(y_k, T_xy_set, T_theta_rng, veh) == false && step < max_steps
         step += 1
 
         # calculate optimal action
@@ -345,7 +382,9 @@ function find_path(y_0, U, T_xy_set, dt, sg::StateGrid, veh::Vehicle)
 end
 
 
-# ISSUE: NEED TO UNDERSTAND FORWARD/BACKWARD CHATTERING PROBLEM
+# ISSUE: need to understand forward/backward chattering ISSUE
+
+# NOTE: want to understand why value iteration gets hung up on certain values
 
 # calculates optimal action as a function of state
 function optimal_action(y, U, sg::StateGrid, veh::Vehicle)
@@ -375,7 +414,7 @@ function optimal_action(y, U, sg::StateGrid, veh::Vehicle)
         [-veh.c_vb, veh.c_phi],
         [-veh.c_vb, -veh.c_phi]]
 
-    HJB_min(a) = a[1]*(du_dx*cos(y[3]) + du_dy*sin(y[3]) + du_dtheta*(1/veh.l)*tan(a[2]))
+    HJB_min(a) = a[1]*(du_dx*cos(y[3]) + du_dy*sin(y[3]) + du_dtheta*(1/veh.wb)*tan(a[2]))
     a_opt = argmin(HJB_min, A)
 
     return a_opt
@@ -413,39 +452,40 @@ end
 # 2) PARAMETERS --- --- ---
 
 # vehicle parameters
-marmot = Vehicle(1.5, 0.75, 0.475, 0.324)   
-unit_car = Vehicle(1.0, 1.0, 0.5, 1.0)   
+marmot = Vehicle(1.5, 0.75, 0.475, 0.324, 0.5207, 0.2762, 0.0889)   
+# unit_car = Vehicle(1.0, 1.0, 0.5, 1.0)   
 
 # define workspace
 W_set = [[-3.25 -7.0];
-        [3.25   -7.0;
-        [3.25   7.0];
-        [-3.25  7.0]]
+        [3.25 -7.0];
+        [3.25 7.0];
+        [-3.25 7.0]]
 
 W_x_bounds = [minimum(W_set[:,1]), maximum(W_set[:,1])]
-W_x_rng = [minimum(W_set[:,1]), maximum(W_set[:,1])]
+W_y_bounds = [minimum(W_set[:,2]), maximum(W_set[:,2])]
 
 # define target set
-T_xy_set = [[1.0   4.0];
-            [2.0    4.0];
-            [2.0    5.0];
-            [1.0    5.0]]
+T_xy_set = [[1.0 4.0];
+            [2.0 4.0];
+            [2.0 5.0];
+            [1.0 5.0]]
 
+# ISSUE: may want to be able to define a range across +/-pi
 T_theta_rng = [-pi, pi]
 
 # define obstacles
-O1_set = [[-1.0 0.0];
-        [1.0    0.0];
-        [1.0    1.0];
-        [-1.0   1.0]]
+O1_set = [[-2.0 -2.0];
+        [2.0 -2.0];
+        [2.0 0.0];
+        [-2.0 0.0]]
 
-O2_set = [[1.5  -4.0];
-        [2.0    -4.0];
-        [2.0    -2.0];
-        [1.5    -2.0]]
+O2_set = [[1.5 -4.0];
+        [2.0 -4.0];
+        [2.0 -2.0];
+        [1.5 -2.0]]
 
-O_set = [O1_set, O2_set]
-# O_set = []
+# O_set = [O1_set, O2_set]
+O_set = [O1_set]
 
 # initialize state grid
 h_xy = 0.125
@@ -455,13 +495,10 @@ sg = StateGrid(h_xy,
                 h_theta,
                 minimum(W_set[:,1]) : h_xy : maximum(W_set[:,1]),
                 minimum(W_set[:,2]) : h_xy : maximum(W_set[:,2]),
-                minimum(W_set[:,3]) : h_theta : maximum(W_set[:,3]))
-
+                -pi : h_theta : pi)
 
 # TO-DO:
-#   - improved set checker (halfspace matrix)
-#   - non-rectangular obstacles
-#   - specific theta goal
+#   - add body shape to car
 
 
 # 3) MAIN --- --- ---
@@ -469,108 +506,57 @@ println("\nstart --- --- ---")
 
 du_tol = 0.01
 max_reps = 100
-# @time U = solve_HJB_PDE(du_tol, max_reps, sg, marmot)
+@time U = solve_HJB_PDE(du_tol, max_reps, sg, marmot)
 
 dt = 0.05
 
 # ISSUE: value estimate not matching actual path length (time)
 #   - is this ok/expected? look into further
 
+
 # 4) PLOTS --- --- ---
-W_x_pts = [W_x[1],W_x[2],W_x[2],W_x[1],W_x[1]]
-W_y_pts = [W_y[1],W_y[1],W_y[2],W_y[2],W_y[1]]
+function plot_polygon(P_set, p, lw, lc, ll)
+    P_x_pts = [P_set[:,1]; P_set[1,1]]
+    P_y_pts = [P_set[:,2]; P_set[1,2]]
 
-T_x_pts = [T_x[1],T_x[2],T_x[2],T_x[1],T_x[1]]
-T_y_pts = [T_y[1],T_y[1],T_y[2],T_y[2],T_y[1]]
-
-O1_x_pts = [O1_x[1],O1_x[2],O1_x[2],O1_x[1],O1_x[1]]
-O1_y_pts = [O1_y[1],O1_y[1],O1_y[2],O1_y[2],O1_y[1]]
-
-O2_x_pts = [O2_x[1],O2_x[2],O2_x[2],O2_x[1],O2_x[1]]
-O2_y_pts = [O2_y[1],O2_y[1],O2_y[2],O2_y[2],O2_y[1]]
+    plot!(p, P_x_pts, P_y_pts, linewidth=lw, linecolor=lc, label=ll)
+end
 
 
+# plot U as heat map
+for k_plot in LinRange(1, size(sg.theta_grid, 1), 9)
+    k_plot = Int(round(k_plot, digits=0))
+    theta_k = round(rad2deg(sg.theta_grid[k_plot]), digits=3)
 
-# plot u(x,y,0) as color map
-for k_plot in LinRange(1, length(sg.theta_grid), 9)
-    k_plot= Int(round(k_plot, digits=0))
-    theta_k = round(rad2deg(sg.theta_grid[k_plot]), digits=4)
-
-    pk = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,k_plot]), clim=(0,15),
+    p_k = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,k_plot]), clim=(0,15),
                 aspect_ratio=:equal, size=(600,700),
                 xlabel="x-axis", ylabel="y-axis", title="HJB Value Function: u(x, y, theta=$theta_k)")
 
-    plot!(pk, W_x_pts, W_y_pts, linewidth=2, linecolor=:black, label="Workspace")
-    plot!(pk, T_x_pts, T_y_pts, linewidth=2, linecolor=:green, label="Target Set")
-    plot!(pk, O1_x_pts, O1_y_pts, linewidth=2, linecolor=:red, label="Obstacle 1")
-    plot!(pk, O2_x_pts, O2_y_pts, linewidth=2, linecolor=:red, label="Obstacle 2")
+    plot_polygon(W_set, p_k, 2, :black, "Workspace")
+    plot_polygon(T_xy_set, p_k, 2, :green, "Target Set")
+    plot_polygon(O1_set, p_k, 2, :red, "Obstacle")
+    # plot_polygon(O2_set, p_k, 2, :red, "")
 
-    display(pk)
+    display(p_k)
 end
 
-theta_wrap = deg2rad(180)
-wrap_around = [[-8, -8, theta_wrap],
-                [-8, -6, theta_wrap],
-                [-8, -4, theta_wrap],
-                [-8, -2, theta_wrap],
-                [-8, 0, theta_wrap],
-                [-8, 2, theta_wrap],
-                [-8, 4, theta_wrap],
-                [-8, 6, theta_wrap],
-                [-8, 8, theta_wrap],
-                [-6, -8, theta_wrap],
-                [-6, 8, theta_wrap],
-                [-4, -8, theta_wrap],
-                [-4, 8, theta_wrap],
-                [-2, -8, theta_wrap],
-                [-2, 8, theta_wrap],
-                [0, -8, theta_wrap],
-                [0, 8, theta_wrap],
-                [2, -8, theta_wrap],
-                [2, 8, theta_wrap],
-                [4, -8, theta_wrap],
-                [4, 8, theta_wrap],
-                [6, -8, theta_wrap],
-                [6, 8, theta_wrap],
-                [8, -8, theta_wrap],
-                [8, -6, theta_wrap],
-                [8, -4, theta_wrap],
-                [8, -2, theta_wrap],
-                [8, 0, theta_wrap],
-                [8, 2, theta_wrap],
-                [8, 4, theta_wrap],
-                [8, 6, theta_wrap],
-                [8, 8, theta_wrap]]
 
-theta_obs = pi/2
-asym_obs = [[-6, -7.5, theta_obs],
-            [-4, -7.5, theta_obs],
-            [-2, -7.5, theta_obs],
-            [0, -7.5, theta_obs],
-            [2, -7.5, theta_obs],
-            [-5, -5.5, theta_obs],
-            [-3, -5.5, theta_obs],
-            [-1, -5.5, theta_obs],
-            [1, -5.5, theta_obs],
-            [-4, -4.5, theta_obs],
-            [-2, -4.5, theta_obs],
-            [0, -4.5, theta_obs]]
-
-aspen1 = [[-1, -6.5, pi/2],
-            [0, -6.5, pi/4],
-            [-2, -6.5, 3*pi/4],
-            [1, -6.5, -pi/2]]
+aspen1 = [[-2, -6.5, 3*pi/4],
+            [-1, -6.5, -pi/4],
+            [0, -6.5, pi/2],
+            [1, -6.5, -3*pi/4],
+            [2, -6.5, pi/4]]
 
 initial_poses = aspen1
 
 # plot optimal path from y_0 to target set
 p_path = plot(aspect_ratio=:equal, size=(600,700), 
             title="HJB Path Planner", xlabel="x-axis [m]", ylabel="y-axis [m]")
-plot!(p_path, W_x_pts, W_y_pts, linewidth=2, linecolor=:black, label="Workspace")
-plot!(p_path, T_x_pts, T_y_pts, linewidth=2, linecolor=:green, label="Target Set")
-plot!(p_path, O1_x_pts, O1_y_pts, linewidth=2, linecolor=:red, label="Obstacle 1")
-plot!(p_path, O2_x_pts, O2_y_pts, linewidth=2, linecolor=:red, label="Obstacle 2")
 
+plot_polygon(W_set, p_path, 2, :black, "Workspace")
+plot_polygon(T_xy_set, p_path, 2, :green, "Target Set")
+plot_polygon(O1_set, p_path, 2, :red, "Obstacle")
+# plot_polygon(O2_set, p_path, 2, :red, "")
 
 for y_0 in initial_poses
     (y_path, u_path) = find_path(y_0, U, T_xy_set, dt, sg, marmot)
