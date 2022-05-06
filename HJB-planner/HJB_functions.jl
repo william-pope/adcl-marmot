@@ -227,7 +227,7 @@ function update_value(U, i, j, k, sg::StateGrid, veh::Vehicle)
 end
 
 # main function to iteratively calculate value function using HJB
-function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle)
+function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle, animate)
     N_x = length(sg.x_grid)
     N_y = length(sg.y_grid)
     N_theta = length(sg.theta_grid)
@@ -249,7 +249,8 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle)
     du_max = maximum(Up)
     rep = 1
     gs = 1
-    anim_U = @animate while du_max > du_tol && rep < max_reps
+    # anim_U = @animate 
+    while du_max > du_tol && rep < max_reps
         sweep = gs_sweeps[gs]
         
         for i in sweep[1]
@@ -286,48 +287,50 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle)
         rep += 1
 
         # animation ---
-        theta_plot = pi/2
-        if theta_plot in sg.theta_grid
-            k_plot = indexin(theta_plot, sg.theta_grid)[1]
-        else
-            k_plot = searchsortedfirst(sg.theta_grid, theta_plot) - 1
-        end
+        if animate == true
+            theta_plot = pi/2
+            if theta_plot in sg.theta_grid
+                k_plot = indexin(theta_plot, sg.theta_grid)[1]
+            else
+                k_plot = searchsortedfirst(sg.theta_grid, theta_plot) - 1
+            end
 
-        p_k = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,k_plot]), clim=(0,15),
-                    aspect_ratio=:equal, size=(1000,850),
-                    xlabel="x-axis [m]", ylabel="y-axis [m]", 
-                    title="HJB Value Function",
-                    titlefontsize = 20,
-                    colorbar_title = "time-to-target [s]",
-                    legend=:topright,
-                    legend_font_pointsize = 11,
-                    top_margin = -30*Plots.mm,
-                    left_margin = 8*Plots.mm,
-                    bottom_margin = -8*Plots.mm)
+            p_k = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,k_plot]), clim=(0,15),
+                        aspect_ratio=:equal, size=(1000,850),
+                        xlabel="x-axis [m]", ylabel="y-axis [m]", 
+                        title="HJB Value Function",
+                        titlefontsize = 20,
+                        colorbar_title = "time-to-target [s]",
+                        legend=:topright,
+                        legend_font_pointsize = 11,
+                        top_margin = -30*Plots.mm,
+                        left_margin = 8*Plots.mm,
+                        bottom_margin = -8*Plots.mm)
 
-        plot_polygon(W_set, p_k, 2, :black, "Workspace")
-        plot_polygon(T_xy_set, p_k, 2, :green, "Target Set")
-        plot_polygon(O1_set, p_k, 2, :red, "Obstacle")
-        plot_polygon(O2_set, p_k, 2, :red, "")
-        plot_polygon(O3_set, p_k, 2, :red, "")
+            plot_polygon(W_set, p_k, 2, :black, "Workspace")
+            plot_polygon(T_xy_set, p_k, 2, :green, "Target Set")
+            plot_polygon(O1_set, p_k, 2, :red, "Obstacle")
+            plot_polygon(O2_set, p_k, 2, :red, "")
+            plot_polygon(O3_set, p_k, 2, :red, "")
 
-        # plot vehicle figure
-        y = [6, -4, sg.theta_grid[k_plot]]
-        
-        veh_set = pose_to_corners(y, unit_car)
-        veh_mat = [[veh_set[1][1] veh_set[1][2]];
-                    [veh_set[2][1] veh_set[2][2]];
-                    [veh_set[3][1] veh_set[3][2]];
-                    [veh_set[4][1] veh_set[4][2]]]
+            # plot vehicle figure
+            y = [6, -4, sg.theta_grid[k_plot]]
             
-        plot!(p_k, [x_max], [-4], markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
-        plot!(p_k, [6], [-4], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
-        plot_polygon(veh_mat, p_k, 2, :blue, "Vehicle Orientation")
+            veh_set = pose_to_corners(y, unit_car)
+            veh_mat = [[veh_set[1][1] veh_set[1][2]];
+                        [veh_set[2][1] veh_set[2][2]];
+                        [veh_set[3][1] veh_set[3][2]];
+                        [veh_set[4][1] veh_set[4][2]]]
+                
+            plot!(p_k, [x_max], [-4], markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
+            plot!(p_k, [6], [-4], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
+            plot_polygon(veh_mat, p_k, 2, :blue, "Vehicle Orientation")
 
-        # plot step count
-        annotate!(6, 0, text("step:\n$(rep-1)", 14))
+            # plot step count
+            annotate!(6, 0, text("step:\n$(rep-1)", 14))
+        end
     end
-    gif(anim_U, "hjb_90_growth.gif", fps=6)
+    # gif(anim_U, "hjb_90_growth.gif", fps=6)
 
     return U
 end
@@ -417,7 +420,7 @@ function HJB_planner(y_0, U, T_xy_set, T_theta_set, dt, sg::StateGrid, veh::Vehi
         step += 1
 
         # calculate optimal action
-        u_k = optimal_action(y_k, U, sg, veh)
+        u_k = optimal_action_HJB(y_k, U, sg, veh)
         push!(u_path, u_k)
 
         # set noise parameters
@@ -437,13 +440,21 @@ function HJB_planner(y_0, U, T_xy_set, T_theta_set, dt, sg::StateGrid, veh::Vehi
 end
 
 
-# ISSUE: need to understand forward/backward chattering issue
 
 # NOTE: want to understand why value iteration gets hung up on certain values
 
+# NOTE: this function needs to be called from a ROS node for online actions
+# - inputs:
+#   - y - current pose
+#   - U - HJB value function (saved in marmot-algs folder)
+#   - sg - state grid (should save as file alongside U)
+#   - veh - marmot parameters (should save as file also)  
+# - outputs:
+#   - a_opt - optimal action at current state
+
 # calculates optimal action as a function of state
-function optimal_action(y, U, sg::StateGrid, veh::Vehicle)
-    # adjust position when near edge for boundary problems
+function optimal_action_HJB(y, U, sg::StateGrid, veh::Vehicle)
+    # adjust position when near edge for boundary issues
     if abs(y[1] - sg.x_grid[1]) < 2*sg.h_xy
         y[1] = sg.x_grid[3]
     elseif abs(y[1] - sg.x_grid[end]) < 2*sg.h_xy
