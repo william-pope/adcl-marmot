@@ -441,6 +441,21 @@ end
 
 # NOTE: want to understand why value iteration gets hung up on certain values
 
+# For Himanshu:
+    # TO-DO: remove backwards motion
+    # TO-DO: time the optimal_action
+    # TO-DO:
+
+    # return to POMDP: optimal action at given state
+
+    # dt = 0.1 vs dt = 1.0, what issues will appear? hitting obstacles? 
+    # reactive controller will modify velocity on path, how will this affect path execution and safety?
+
+    # delta rollout action
+
+    # calculate limited horizon path ahead of car, based on current velocity
+    #   - generate next 30 points and actions
+
 # calculates optimal action as a function of state
 function optimal_action(y, U, sg::StateGrid, veh::Vehicle)
     # adjust position when near edge for boundary problems
