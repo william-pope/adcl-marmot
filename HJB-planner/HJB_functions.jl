@@ -16,12 +16,16 @@ using Random
 rng = MersenneTwister(1234)
 
 # define discretized grid struct
-struct StateGrid
+struct Environment
     h_xy::Float64
     h_theta::Float64
     x_grid::StepRangeLen
     y_grid::StepRangeLen
     theta_grid::StepRangeLen
+    W::Matrix{Float64}
+    T_xy::Matrix{Float64}
+    T_theta::Vector{Vector{Float64}}
+    O_vec::Vector{Matrix{Float64}}
 end
 
 struct Vehicle
@@ -36,19 +40,19 @@ end
 
 # finite difference approximations
 # (eq 30)
-function G_p1_ijk(theta_k, u_ip, u_jp, u_kp, u_kn, sg::StateGrid, veh::Vehicle)
+function G_p1_ijk(theta_k, u_ip, u_jp, u_kp, u_kn, env::Environment, veh::Vehicle)
     rho = veh.wb/tan(veh.c_phi)
 
-    num = sg.h_xy/veh.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp + sg.h_xy/(rho*sg.h_theta)*min(u_kp, u_kn)
-    den = abs(cos(theta_k)) + abs(sin(theta_k)) + sg.h_xy/(rho*sg.h_theta)
+    num = env.h_xy/veh.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp + env.h_xy/(rho*env.h_theta)*min(u_kp, u_kn)
+    den = abs(cos(theta_k)) + abs(sin(theta_k)) + env.h_xy/(rho*env.h_theta)
     G_p1 = num/den
 
     return G_p1
 end
 
 # (eq 31)
-function F_p1_ijk(theta_k, u_ip, u_jp, sg::StateGrid, veh::Vehicle)
-    num = sg.h_xy/veh.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp
+function F_p1_ijk(theta_k, u_ip, u_jp, env::Environment, veh::Vehicle)
+    num = env.h_xy/veh.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp
     den = abs(cos(theta_k)) + abs(sin(theta_k))
     F_p1 = num/den
 
@@ -56,19 +60,19 @@ function F_p1_ijk(theta_k, u_ip, u_jp, sg::StateGrid, veh::Vehicle)
 end
 
 # (eq 32)
-function G_n1_ijk(theta_k, u_in, u_jn, u_kp, u_kn, sg::StateGrid, veh::Vehicle)
+function G_n1_ijk(theta_k, u_in, u_jn, u_kp, u_kn, env::Environment, veh::Vehicle)
     rho = veh.wb/tan(veh.c_phi)
 
-    num = sg.h_xy/veh.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn + sg.h_xy/(rho*sg.h_theta)*min(u_kp, u_kn)
-    den = abs(cos(theta_k)) + abs(sin(theta_k)) + sg.h_xy/(rho*sg.h_theta)
+    num = env.h_xy/veh.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn + env.h_xy/(rho*env.h_theta)*min(u_kp, u_kn)
+    den = abs(cos(theta_k)) + abs(sin(theta_k)) + env.h_xy/(rho*env.h_theta)
     G_n1 = num/den
 
     return G_n1
 end
 
 # (eq 33)
-function F_n1_ijk(theta_k, u_in, u_jn, sg::StateGrid, veh::Vehicle)
-    num = sg.h_xy/veh.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn
+function F_n1_ijk(theta_k, u_in, u_jn, env::Environment, veh::Vehicle)
+    num = env.h_xy/veh.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn
     den = abs(cos(theta_k)) + abs(sin(theta_k))
     F_n1 = num/den
 
@@ -76,20 +80,20 @@ function F_n1_ijk(theta_k, u_in, u_jn, sg::StateGrid, veh::Vehicle)
 end
 
 # target set checker
-function in_target_set(y, T_xy_set, T_theta_set, veh::Vehicle)
+function in_target_set(y, env::Environment, veh::Vehicle)
     # check position of corners
-    veh_corners = pose_to_corners(y, veh)
-    rows = [collect(1:size(T_xy_set, 1)); 1]
+    V_c = pose_to_corners(y, veh)
+    rows = [collect(1:size(env.T_xy, 1)); 1]
 
-    for c in veh_corners
-        for i in 1:size(T_xy_set, 1)
+    for c in V_c
+        for i in 1:size(env.T_xy, 1)
             i1 = rows[i]
             i2 = rows[i+1]
 
-            x1 = T_xy_set[i1,1]
-            y1 = T_xy_set[i1,2]
-            x2 = T_xy_set[i2,1]
-            y2 = T_xy_set[i2,2]
+            x1 = env.T_xy[i1,1]
+            y1 = env.T_xy[i1,2]
+            x2 = env.T_xy[i2,1]
+            y2 = env.T_xy[i2,2]
 
             val = (y1 - y2)*c[1] + (x2 - x1)*c[2] + x1*y2 - x2*y1
 
@@ -100,9 +104,9 @@ function in_target_set(y, T_xy_set, T_theta_set, veh::Vehicle)
     end
 
     # check orientation
-    in_theta = zeros(Bool, size(T_theta_set, 1))
-    for i in 1:size(T_theta_set, 1)
-        if y[3] >= minimum(T_theta_set[i]) && y[3] <= maximum(T_theta_set[i])
+    in_theta = zeros(Bool, size(env.T_theta, 1))
+    for i in 1:size(env.T_theta, 1)
+        if y[3] >= minimum(env.T_theta[i]) && y[3] <= maximum(env.T_theta[i])
             in_theta[i] = 1
         end
     end
@@ -114,22 +118,22 @@ function in_target_set(y, T_xy_set, T_theta_set, veh::Vehicle)
 end
 
 # obstacle set checker
-function in_obstacle_set(y, O_set, veh::Vehicle)
-    veh_corners = pose_to_corners(y, veh::Vehicle)
+function in_obstacle_set(y, env::Environment, veh::Vehicle)
+    V_c = pose_to_corners(y, veh::Vehicle)
 
-    for c in veh_corners 
-        for Oi_set in O_set
-            rows = [collect(1:size(Oi_set, 1)); 1]
+    for c in V_c 
+        for Oi in env.O_vec
+            rows = [collect(1:size(Oi, 1)); 1]
 
-            ineqs = zeros(Bool, size(Oi_set, 1))
-            for i in 1:size(Oi_set, 1)
+            ineqs = zeros(Bool, size(Oi, 1))
+            for i in 1:size(Oi, 1)
                 i1 = rows[i]
                 i2 = rows[i+1]
 
-                x1 = Oi_set[i1,1]
-                y1 = Oi_set[i1,2]
-                x2 = Oi_set[i2,1]
-                y2 = Oi_set[i2,2]
+                x1 = Oi[i1,1]
+                y1 = Oi[i1,2]
+                x2 = Oi[i2,1]
+                y2 = Oi[i2,2]
 
                 val = (y1 - y2)*c[1] + (x2 - x1)*c[2] + x1*y2 - x2*y1
 
@@ -147,6 +151,33 @@ function in_obstacle_set(y, O_set, veh::Vehicle)
     return false
 end
 
+# workspace checker
+function in_workspace(y, env::Environment, veh::Vehicle)
+    V_c = pose_to_corners(y, veh::Vehicle)
+
+    for c in V_c 
+        rows = [collect(1:size(env.W, 1)); 1]
+
+        for i in 1:size(env.W, 1)
+            i1 = rows[i]
+            i2 = rows[i+1]
+
+            x1 = env.W[i1,1]
+            y1 = env.W[i1,2]
+            x2 = env.W[i2,1]
+            y2 = env.W[i2,2]
+
+            val = (y1 - y2)*c[1] + (x2 - x1)*c[2] + x1*y2 - x2*y1
+
+            if val < 0
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
 # calculates position of corners of rectangular vehicle
 function pose_to_corners(y, veh::Vehicle)
     x_FR = y[1] + (veh.l - veh.b2a)*cos(y[3]) + (veh.w/2)*sin(y[3])
@@ -159,28 +190,28 @@ function pose_to_corners(y, veh::Vehicle)
     y_BR = y[2] - veh.b2a*sin(y[3]) - (veh.w/2)*cos(y[3])
     y_BL = y[2] - veh.b2a*sin(y[3]) + (veh.w/2)*cos(y[3])
     
-    veh_corners = [[x_FR, y_FR],
-                    [x_FL, y_FL],
-                    [x_BL, y_BL],
-                    [x_BR, y_BR]]
+    V_c = [[x_FR, y_FR],
+            [x_FL, y_FL],
+            [x_BL, y_BL],
+            [x_BR, y_BR]]
 
-    return veh_corners
+    return V_c
 end
 
 # initialize value approximations
-function initialize_value_array(sg::StateGrid, veh::Vehicle)
-    Up = ones(Float64, length(sg.x_grid), length(sg.y_grid), length(sg.theta_grid))
+function initialize_value_array(env::Environment, veh::Vehicle)
+    Up = ones(Float64, length(env.x_grid), length(env.y_grid), length(env.theta_grid))
 
-    for i in 1:length(sg.x_grid)
-        for j in 1:length(sg.y_grid)
-            for k in 1:length(sg.theta_grid)
-                x_i = sg.x_grid[i]
-                y_j = sg.y_grid[j]
-                theta_k = sg.theta_grid[k]
+    for i in 1:length(env.x_grid)
+        for j in 1:length(env.y_grid)
+            for k in 1:length(env.theta_grid)
+                x_i = env.x_grid[i]
+                y_j = env.y_grid[j]
+                theta_k = env.theta_grid[k]
 
                 y_ijk = [x_i, y_j, theta_k]
 
-                if in_target_set(y_ijk, T_xy_set, T_theta_set, veh) == true
+                if in_target_set(y_ijk, env, veh) == true
                     Up[i,j,k] = 0
                 else
                     Up[i,j,k] = 50
@@ -195,8 +226,8 @@ function initialize_value_array(sg::StateGrid, veh::Vehicle)
 end
 
 # computes value update for grid point ijk using HJB finite difference scheme
-function update_value(U, i, j, k, sg::StateGrid, veh::Vehicle)
-    theta_k = sg.theta_grid[k]
+function update_value(U, i, j, k, env::Environment, veh::Vehicle)
+    theta_k = env.theta_grid[k]
 
     xi_k = Int(sign(cos(theta_k)))
     nu_k = Int(sign(sin(theta_k)))
@@ -205,8 +236,8 @@ function update_value(U, i, j, k, sg::StateGrid, veh::Vehicle)
     in = i - xi_k
     jp = j + nu_k
     jn = j - nu_k
-    k == length(sg.theta_grid)-1 ? kp = 1 : kp = k + 1
-    k == 1 ? kn = length(sg.theta_grid)-1 : kn = k - 1
+    k == length(env.theta_grid)-1 ? kp = 1 : kp = k + 1
+    k == 1 ? kn = length(env.theta_grid)-1 : kn = k - 1
 
     u_ip = U[ip,j,k] 
     u_in = U[in,j,k]
@@ -216,10 +247,10 @@ function update_value(U, i, j, k, sg::StateGrid, veh::Vehicle)
     u_kn = U[i,j,kn]
 
     # compute u_ijk update
-    G_p1 = G_p1_ijk(theta_k, u_ip, u_jp, u_kp, u_kn, sg, veh)
-    F_p1 = F_p1_ijk(theta_k, u_ip, u_jp, sg, veh)
-    G_n1 = G_n1_ijk(theta_k, u_in, u_jn, u_kp, u_kn, sg, veh)
-    F_n1 = F_n1_ijk(theta_k, u_in, u_jn, sg, veh)
+    G_p1 = G_p1_ijk(theta_k, u_ip, u_jp, u_kp, u_kn, env, veh)
+    F_p1 = F_p1_ijk(theta_k, u_ip, u_jp, env, veh)
+    G_n1 = G_n1_ijk(theta_k, u_in, u_jn, u_kp, u_kn, env, veh)
+    F_n1 = F_n1_ijk(theta_k, u_in, u_jn, env, veh)
 
     up_ijk = min(G_p1, F_p1, G_n1, F_n1, U[i,j,k])
 
@@ -227,10 +258,10 @@ function update_value(U, i, j, k, sg::StateGrid, veh::Vehicle)
 end
 
 # main function to iteratively calculate value function using HJB
-function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle, animate)
-    N_x = length(sg.x_grid)
-    N_y = length(sg.y_grid)
-    N_theta = length(sg.theta_grid)
+function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, animate)
+    N_x = length(env.x_grid)
+    N_y = length(env.y_grid)
+    N_theta = length(env.theta_grid)
 
     # define ijk iterators for Gauss-Seidel sweeping scheme
     gs_sweeps = [[2:N_x-1, 2:N_y-1, 1:N_theta-1],     # FFF
@@ -243,7 +274,7 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle, ani
                 [reverse(2:N_x-1), reverse(2:N_y-1), reverse(1:N_theta-1)]]   # BBB
 
     # initialize U and Up
-    (U, Up) = initialize_value_array(sg, veh)
+    (U, Up) = initialize_value_array(env, veh)
 
     # main function loop
     du_max = maximum(Up)
@@ -256,14 +287,14 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle, ani
         for i in sweep[1]
             for j in sweep[2]
                 for k in sweep[3]
-                    x_i = sg.x_grid[i]
-                    y_j = sg.y_grid[j]
-                    theta_k = sg.theta_grid[k]
+                    x_i = env.x_grid[i]
+                    y_j = env.y_grid[j]
+                    theta_k = env.theta_grid[k]
 
                     y_ijk = [x_i, y_j, theta_k]
                     
-                    if in_obstacle_set(y_ijk, O_set, veh) == false
-                        Up[i,j,k] = update_value(U, i, j, k, sg, veh)
+                    if in_obstacle_set(y_ijk, env, veh) == false
+                        Up[i,j,k] = update_value(U, i, j, k, env, veh)
                     end
                 end
             end
@@ -289,13 +320,13 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle, ani
         # animation ---
         if animate == true
             theta_plot = pi/2
-            if theta_plot in sg.theta_grid
-                k_plot = indexin(theta_plot, sg.theta_grid)[1]
+            if theta_plot in env.theta_grid
+                k_plot = indexin(theta_plot, env.theta_grid)[1]
             else
-                k_plot = searchsortedfirst(sg.theta_grid, theta_plot) - 1
+                k_plot = searchsortedfirst(env.theta_grid, theta_plot) - 1
             end
 
-            p_k = heatmap(sg.x_grid, sg.y_grid, transpose(U[:,:,k_plot]), clim=(0,15),
+            p_k = heatmap(env.x_grid, env.y_grid, transpose(U[:,:,k_plot]), clim=(0,15),
                         aspect_ratio=:equal, size=(1000,850),
                         xlabel="x-axis [m]", ylabel="y-axis [m]", 
                         title="HJB Value Function",
@@ -307,24 +338,24 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle, ani
                         left_margin = 8*Plots.mm,
                         bottom_margin = -8*Plots.mm)
 
-            plot_polygon(W_set, p_k, 2, :black, "Workspace")
-            plot_polygon(T_xy_set, p_k, 2, :green, "Target Set")
-            plot_polygon(O1_set, p_k, 2, :red, "Obstacle")
-            plot_polygon(O2_set, p_k, 2, :red, "")
-            plot_polygon(O3_set, p_k, 2, :red, "")
+            plot_polygon(p_k, env.W, 2, :black, "Workspace")
+            plot_polygon(p_k, env.T_xy, 2, :green, "Target Set")
+            plot_polygon(p_k, env.O_vec[1], 2, :red, "Obstacle")    # TO-DO: make obstacle plotting cleaner
+            plot_polygon(p_k, env.O_vec[2], 2, :red, "")
+            plot_polygon(p_k, env.O_vec[3], 2, :red, "")
 
             # plot vehicle figure
-            y = [6, -4, sg.theta_grid[k_plot]]
+            y = [6, -4, env.theta_grid[k_plot]]
             
-            veh_set = pose_to_corners(y, unit_car)
-            veh_mat = [[veh_set[1][1] veh_set[1][2]];
-                        [veh_set[2][1] veh_set[2][2]];
-                        [veh_set[3][1] veh_set[3][2]];
-                        [veh_set[4][1] veh_set[4][2]]]
+            V_c = pose_to_corners(y, unit_car)
+            V = [[V_c[1][1] V_c[1][2]];
+                [V_c[2][1] V_c[2][2]];
+                [V_c[3][1] V_c[3][2]];
+                [V_c[4][1] V_c[4][2]]]
                 
             plot!(p_k, [x_max], [-4], markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
             plot!(p_k, [6], [-4], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
-            plot_polygon(veh_mat, p_k, 2, :blue, "Vehicle Orientation")
+            plot_polygon(p_k, V, 2, :blue, "Vehicle Orientation")
 
             # plot step count
             annotate!(6, 0, text("step:\n$(rep-1)", 14))
@@ -336,7 +367,7 @@ function solve_HJB_PDE(du_tol, max_reps, sg::StateGrid, O_set, veh::Vehicle, ani
 end
 
 # interpolate U to return a value for any point (x,y,theta)
-function interp_value(y, U, sg::StateGrid)
+function interp_value(y, U, env::Environment)
     # adjust theta within bounds
     if y[3] > pi
         y[3] -= 2*pi
@@ -345,37 +376,37 @@ function interp_value(y, U, sg::StateGrid)
     end
 
     # implements trilinear interpolation from Wikipedia
-    if y[1] in sg.x_grid
-        i_0 = indexin(y[1], sg.x_grid)[1]
+    if y[1] in env.x_grid
+        i_0 = indexin(y[1], env.x_grid)[1]
     else
-        i_0 = searchsortedfirst(sg.x_grid, y[1]) - 1
+        i_0 = searchsortedfirst(env.x_grid, y[1]) - 1
     end
 
-    if y[2] in sg.y_grid
-        j_0 = indexin(y[2], sg.y_grid)[1]
+    if y[2] in env.y_grid
+        j_0 = indexin(y[2], env.y_grid)[1]
     else
-        j_0 = searchsortedfirst(sg.y_grid, y[2]) - 1
+        j_0 = searchsortedfirst(env.y_grid, y[2]) - 1
     end
 
     # ISSUE: assign k_0 = 0
     #   - noise throwing theta out of bounds?
-    if y[3] in sg.theta_grid
-        k_0 = indexin(y[3], sg.theta_grid)[1]
+    if y[3] in env.theta_grid
+        k_0 = indexin(y[3], env.theta_grid)[1]
     else
-        k_0 = searchsortedfirst(sg.theta_grid, y[3]) - 1
+        k_0 = searchsortedfirst(env.theta_grid, y[3]) - 1
     end
 
     i_1 = i_0 + 1
     j_1 = j_0 + 1
-    k_0 == length(sg.theta_grid) ? k_1 = 1 : k_1 = k_0 + 1
+    k_0 == length(env.theta_grid) ? k_1 = 1 : k_1 = k_0 + 1
 
-    x_0 = sg.x_grid[i_0]
-    y_0 = sg.y_grid[j_0]            # ISSUE: indexing to 0
-    theta_0 = sg.theta_grid[k_0]    # ISSUE: indexing to 0
+    x_0 = env.x_grid[i_0]
+    y_0 = env.y_grid[j_0]            # ISSUE: indexing to 0
+    theta_0 = env.theta_grid[k_0]    # ISSUE: indexing to 0
 
-    x_1 = sg.x_grid[i_1]
-    y_1 = sg.y_grid[j_1]
-    theta_1 = sg.theta_grid[k_1]
+    x_1 = env.x_grid[i_1]
+    y_1 = env.y_grid[j_1]
+    theta_1 = env.theta_grid[k_1]
 
     x_d = (y[1] - x_0)/(x_1 - x_0)
     y_d = (y[2] - y_0)/(y_1 - y_0)
@@ -403,7 +434,7 @@ function interp_value(y, U, sg::StateGrid)
     return u_itp
 end
 
-function HJB_planner(y_0, U, T_xy_set, T_theta_set, dt, sg::StateGrid, veh::Vehicle)
+function HJB_planner(y_0, U, dt, env::Environment, veh::Vehicle)
     max_steps = 5000
 
     if typeof(y_0) != Vector{Float64}
@@ -416,11 +447,11 @@ function HJB_planner(y_0, U, T_xy_set, T_theta_set, dt, sg::StateGrid, veh::Vehi
     u_path = []
 
     step = 0
-    while in_target_set(y_k, T_xy_set, T_theta_set, veh) == false && step < max_steps
+    while in_target_set(y_k, env, veh) == false && step < max_steps
         step += 1
 
         # calculate optimal action
-        u_k = optimal_action_HJB(y_k, U, sg, veh)
+        u_k = optimal_action_HJB(y_k, U, env, veh)
         push!(u_path, u_k)
 
         # set noise parameters
@@ -459,24 +490,24 @@ end
     #   - generate next 30 points and actions
 
 # calculates optimal action as a function of state
-function optimal_action_HJB(y, U, sg::StateGrid, veh::Vehicle)
+function optimal_action_HJB(y, U, env::Environment, veh::Vehicle)
     # adjust position when near edge for boundary issues
-    if abs(y[1] - sg.x_grid[1]) < 2*sg.h_xy
-        y[1] = sg.x_grid[3]
-    elseif abs(y[1] - sg.x_grid[end]) < 2*sg.h_xy
-        y[1] = sg.x_grid[end-2]
+    if abs(y[1] - env.x_grid[1]) < 2*env.h_xy
+        y[1] = env.x_grid[3]
+    elseif abs(y[1] - env.x_grid[end]) < 2*env.h_xy
+        y[1] = env.x_grid[end-2]
     end
 
-    if abs(y[2] - sg.y_grid[1]) < 2*sg.h_xy
-        y[2] = sg.y_grid[3]
-    elseif abs(y[2] - sg.y_grid[end]) < 2*sg.h_xy
-        y[2] = sg.y_grid[end-2]
+    if abs(y[2] - env.y_grid[1]) < 2*env.h_xy
+        y[2] = env.y_grid[3]
+    elseif abs(y[2] - env.y_grid[end]) < 2*env.h_xy
+        y[2] = env.y_grid[end-2]
     end
 
     # approximate partial derivatives using centered difference scheme
-    du_dx = (interp_value(y+[sg.h_xy,0,0], U, sg) - interp_value(y-[sg.h_xy,0,0], U, sg))/(2*sg.h_xy)
-    du_dy = (interp_value(y+[0,sg.h_xy,0], U, sg) - interp_value(y-[0,sg.h_xy,0], U, sg))/(2*sg.h_xy)
-    du_dtheta = (interp_value(y+[0,0,sg.h_theta], U, sg) - interp_value(y-[0,0,sg.h_theta], U, sg))/(2*sg.h_theta)
+    du_dx = (interp_value(y+[env.h_xy,0,0], U, env) - interp_value(y-[env.h_xy,0,0], U, env))/(2*env.h_xy)
+    du_dy = (interp_value(y+[0,env.h_xy,0], U, env) - interp_value(y-[0,env.h_xy,0], U, env))/(2*env.h_xy)
+    du_dtheta = (interp_value(y+[0,0,env.h_theta], U, env) - interp_value(y-[0,0,env.h_theta], U, env))/(2*env.h_theta)
 
     # calculate optimal action
     A = [[veh.c_vf, 0],
@@ -486,6 +517,7 @@ function optimal_action_HJB(y, U, sg::StateGrid, veh::Vehicle)
         [-veh.c_vb, veh.c_phi],
         [-veh.c_vb, -veh.c_phi]]
 
+    # TO-DO: need to bias straight actions (set some margin)
     HJB_min(a) = a[1]*(du_dx*cos(y[3]) + du_dy*sin(y[3]) + du_dtheta*(1/veh.wb)*tan(a[2]))
     a_opt = argmin(HJB_min, A)
 
@@ -504,7 +536,6 @@ function car_EoM(x, u, std_v, std_phi, param)
     return x_dot
 end
 
-# ISSUE
 # 4th-order Runge-Kutta integration scheme
 function runge_kutta_4(EoM::Function, x_k, u, std_v, std_phi, dt, param)
     w1 = EoM(x_k, u, std_v, std_phi, param)
@@ -524,9 +555,9 @@ function runge_kutta_4(EoM::Function, x_k, u, std_v, std_phi, dt, param)
     return x_k1
 end
 
-function plot_polygon(P_set, p, lw, lc, ll)
-    P_x_pts = [P_set[:,1]; P_set[1,1]]
-    P_y_pts = [P_set[:,2]; P_set[1,2]]
+function plot_polygon(my_plot, P, lw, lc, ll)
+    P_x_pts = [P[:,1]; P[1,1]]
+    P_y_pts = [P[:,2]; P[1,2]]
 
-    plot!(p, P_x_pts, P_y_pts, linewidth=lw, linecolor=lc, label=ll)
+    plot!(my_plot, P_x_pts, P_y_pts, linewidth=lw, linecolor=lc, label=ll)
 end
