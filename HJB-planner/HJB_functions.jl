@@ -376,6 +376,7 @@ function interp_value(y, U, env::Environment)
     end
 
     # implements trilinear interpolation from Wikipedia
+    println(y[1])
     if y[1] in env.x_grid
         i_0 = indexin(y[1], env.x_grid)[1]
     else
@@ -388,8 +389,6 @@ function interp_value(y, U, env::Environment)
         j_0 = searchsortedfirst(env.y_grid, y[2]) - 1
     end
 
-    # ISSUE: assign k_0 = 0
-    #   - noise throwing theta out of bounds?
     if y[3] in env.theta_grid
         k_0 = indexin(y[3], env.theta_grid)[1]
     else
@@ -400,9 +399,9 @@ function interp_value(y, U, env::Environment)
     j_1 = j_0 + 1
     k_0 == length(env.theta_grid) ? k_1 = 1 : k_1 = k_0 + 1
 
-    x_0 = env.x_grid[i_0]
-    y_0 = env.y_grid[j_0]            # ISSUE: indexing to 0
-    theta_0 = env.theta_grid[k_0]    # ISSUE: indexing to 0
+    x_0 = env.x_grid[i_0]           # ISSUE: indexing to 0 (i_0 assigned in line 379)
+    y_0 = env.y_grid[j_0]           # ISSUE: indexing to 0 (j_0 assigned in line 385)
+    theta_0 = env.theta_grid[k_0]   # ISSUE: indexing to 0
 
     x_1 = env.x_grid[i_1]
     y_1 = env.y_grid[j_1]

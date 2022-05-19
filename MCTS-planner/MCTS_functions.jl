@@ -71,6 +71,12 @@ function continuous_MCTS(s_0, V_HJB, dt, S, A, gamma, std_v, std_phi, slv::Solve
         end
 
         # ROLLOUT ---
+        # ISSUE: call to interp_value is throwing index error
+        #   - occurs when tree reaches edge of environment, tries to rollout from node outside workspace
+        #   - HJB only has negative value o thin strip around boundary
+        #   - need to truncate branches so that tree doesn't keep growing outside workspace (waste of time)
+        #   - similar framework needed for collision checking ("collision with edg"), so should solve problems together
+
         v_ro_est = interp_value(s_ro, V_HJB, env)   # using HJB value function
         # println("v_ro_est from s_p: ", v_ro_est)
 
