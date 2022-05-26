@@ -15,6 +15,8 @@
 using Random
 rng = MersenneTwister(1234)
 
+algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
+
 # define discretized grid struct
 struct Environment
     h_xy::Float64
@@ -169,7 +171,7 @@ function in_workspace(y, env::Environment, veh::Vehicle)
 
             val = (y1 - y2)*c[1] + (x2 - x1)*c[2] + x1*y2 - x2*y1
 
-            if val < 0
+            if val <= 0
                 return false
             end
         end
@@ -257,8 +259,68 @@ function update_value(U, i, j, k, env::Environment, veh::Vehicle)
     return up_ijk
 end
 
+#   - need to look at how/why upwind, monotone, Gauss-Seidel schemes are used
+#   - i,j,k=[2, 17, 19] -> x,y,th=[-3.75, 0.0, 0.0]
+#   - shouldn't really be updating anything until wavefront reaches point (50 on all sides)
+function update_value2(U, i, j, k, env::Environment, veh::Vehicle)
+    theta_k = env.theta_grid[k]
+
+    x = [env.x_grid[i],
+        env.y_grid[j],
+        env.theta_grid[k]]
+
+    # println("ijk = ", [i,j,k])
+    # println("x = ", x)
+
+    # compute u_ijk update
+    u_min = U[i,j,k]
+    for a_v in [-veh.c_vb, veh.c_vf], a_phi in [-veh.c_phi, 0.0, veh.c_phi]
+        xdot = car_EoM(x, [a_v, a_phi], 0.0, 0.0, veh)
+        xdot[abs.(xdot) .< 10e-9] .= 0.0
+        
+        # calculate upwind indices
+        i_uw = i + sign(xdot[1])
+        j_uw = j + sign(xdot[2])
+        k_uw = k + sign(xdot[3])
+
+        k_uw == length(env.theta_grid)+1 ? k_uw = 2 : k_uw = k_uw
+        k_uw == 0 ? k_uw = length(env.theta_grid)-1 : k_uw = k_uw
+
+        # pull value from upwind points
+        u_i_uw = U[Int(i_uw), j, k]
+        u_j_uw = U[i, Int(j_uw), k]
+        u_k_uw = U[i, j, Int(k_uw)]
+
+        # ISSUE: need to flip some signs to account for changing indices in FDM
+        up_ijk = FDM_eq(a_v, a_phi, xdot, u_i_uw, u_j_uw, u_k_uw, theta_k, env, veh)
+
+        # ?: this part is untested, not sure if this is actually how to do it
+        if up_ijk < u_min
+            u_min = deepcopy(up_ijk)
+        end
+
+        # println([a_v, a_phi], ", ", [i_uw,j_uw,k_uw], ", ", up_ijk)
+    end
+
+    # println("u_min: ", u_min)
+    return u_min
+end
+
+function FDM_eq(a_v, a_phi, xdot, u_i_uw, u_j_uw, u_k_uw, theta_k, env::Environment, veh::Vehicle)
+    s1 = sign(xdot[1])
+    s2 = sign(xdot[2])
+    s3 = sign(xdot[3])
+
+    num = env.h_xy/a_v + s1*cos(theta_k)*u_i_uw + s2*sin(theta_k)*u_j_uw + s3*(env.h_xy/env.h_theta)*(1/veh.wb)*tan(a_phi)*u_k_uw
+    den = s1*cos(theta_k) + s2*sin(theta_k) + s3*(env.h_xy/env.h_theta)*(1/veh.wb)*tan(a_phi)
+
+    u_ijk = num/den
+
+    return u_ijk
+end
+
 # main function to iteratively calculate value function using HJB
-function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, animate)
+function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, anim_bool)
     N_x = length(env.x_grid)
     N_y = length(env.y_grid)
     N_theta = length(env.theta_grid)
@@ -280,8 +342,7 @@ function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, animate
     du_max = maximum(Up)
     rep = 1
     gs = 1
-    # anim_U = @animate 
-    while du_max > du_tol && rep < max_reps
+    anim_U = @animate while du_max > du_tol && rep < max_reps
         sweep = gs_sweeps[gs]
         
         for i in sweep[1]
@@ -294,6 +355,7 @@ function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, animate
                     y_ijk = [x_i, y_j, theta_k]
                     
                     if in_obstacle_set(y_ijk, env, veh) == false
+                        # Up[i,j,k] = update_value(U, i, j, k, env, veh)
                         Up[i,j,k] = update_value(U, i, j, k, env, veh)
                     end
                 end
@@ -318,7 +380,7 @@ function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, animate
         rep += 1
 
         # animation ---
-        if animate == true
+        if anim_bool == true
             theta_plot = pi/2
             if theta_plot in env.theta_grid
                 k_plot = indexin(theta_plot, env.theta_grid)[1]
@@ -326,7 +388,7 @@ function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, animate
                 k_plot = searchsortedfirst(env.theta_grid, theta_plot) - 1
             end
 
-            p_k = heatmap(env.x_grid, env.y_grid, transpose(U[:,:,k_plot]), clim=(0,15),
+            p_k = heatmap(env.x_grid, env.y_grid, transpose(U[:,:,k_plot]), clim=(0,10),
                         aspect_ratio=:equal, size=(1000,850),
                         xlabel="x-axis [m]", ylabel="y-axis [m]", 
                         title="HJB Value Function",
@@ -340,12 +402,15 @@ function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, animate
 
             plot_polygon(p_k, env.W, 2, :black, "Workspace")
             plot_polygon(p_k, env.T_xy, 2, :green, "Target Set")
-            plot_polygon(p_k, env.O_vec[1], 2, :red, "Obstacle")    # TO-DO: make obstacle plotting cleaner
-            plot_polygon(p_k, env.O_vec[2], 2, :red, "")
-            plot_polygon(p_k, env.O_vec[3], 2, :red, "")
+            # plot_polygon(p_k, env.O_vec[1], 2, :red, "Obstacle")    # TO-DO: make obstacle plotting cleaner
+            # plot_polygon(p_k, env.O_vec[2], 2, :red, "")
+            # plot_polygon(p_k, env.O_vec[3], 2, :red, "")
 
             # plot vehicle figure
-            y = [6, -4, env.theta_grid[k_plot]]
+            x_max = 4 + sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
+            y_min = -5 - sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
+
+            y = [2, -5, env.theta_grid[k_plot]]
             
             V_c = pose_to_corners(y, unit_car)
             V = [[V_c[1][1] V_c[1][2]];
@@ -353,63 +418,91 @@ function solve_HJB_PDE(du_tol, max_reps, env::Environment, veh::Vehicle, animate
                 [V_c[3][1] V_c[3][2]];
                 [V_c[4][1] V_c[4][2]]]
                 
-            plot!(p_k, [x_max], [-4], markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
-            plot!(p_k, [6], [-4], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
+            plot!(p_k, [2], [y_min], markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
+            plot!(p_k, [2], [-5], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
             plot_polygon(p_k, V, 2, :blue, "Vehicle Orientation")
 
             # plot step count
-            annotate!(6, 0, text("step:\n$(rep-1)", 14))
+            annotate!(-2, -5, text("step:\n$(rep-1)", 14))
+
+            display(p_k)
         end
     end
-    # gif(anim_U, "hjb_90_growth.gif", fps=6)
+    gif(anim_U, algs_path*"HJB-planner/figures/hjb_growth.gif", fps=6)
 
     return U
 end
 
-# interpolate U to return a value for any point (x,y,theta)
+# may produce asymmetry due to interpolation index selection
 function interp_value(y, U, env::Environment)
+    y_itp = deepcopy(y)
+
+    # map out-of-bounds xy states to boundary
+    if y_itp[1] > env.x_grid[end-1]
+        y_itp[1] = env.x_grid[end-1]
+    elseif y_itp[1] < env.x_grid[2]
+        y_itp[1] = env.x_grid[2]
+    end
+
+    if y_itp[2] > env.y_grid[end-1]
+        y_itp[2] = env.y_grid[end-1]
+    elseif y_itp[2] < env.y_grid[2]
+        y_itp[2] = env.y_grid[2]
+    end
+    
     # adjust theta within bounds
-    if y[3] > pi
-        y[3] -= 2*pi
-    elseif y[3] < -pi
-        y[3] += 2*pi
+    if y_itp[3] > pi
+        y_itp[3] -= 2*pi
+    elseif y_itp[3] < -pi
+        y_itp[3] += 2*pi
     end
 
     # implements trilinear interpolation from Wikipedia
-    println(y[1])
-    if y[1] in env.x_grid
-        i_0 = indexin(y[1], env.x_grid)[1]
+    # println(y[1])
+    if y_itp[1] in env.x_grid
+        i_0 = indexin(y_itp[1], env.x_grid)[1]
     else
-        i_0 = searchsortedfirst(env.x_grid, y[1]) - 1
+        i_0 = searchsortedfirst(env.x_grid, y_itp[1]) - 1
     end
 
-    if y[2] in env.y_grid
-        j_0 = indexin(y[2], env.y_grid)[1]
+    if y_itp[2] in env.y_grid
+        j_0 = indexin(y_itp[2], env.y_grid)[1]
     else
-        j_0 = searchsortedfirst(env.y_grid, y[2]) - 1
+        j_0 = searchsortedfirst(env.y_grid, y_itp[2]) - 1
     end
 
-    if y[3] in env.theta_grid
-        k_0 = indexin(y[3], env.theta_grid)[1]
+    if y_itp[3] in env.theta_grid
+        k_0 = indexin(y_itp[3], env.theta_grid)[1]
     else
-        k_0 = searchsortedfirst(env.theta_grid, y[3]) - 1
+        k_0 = searchsortedfirst(env.theta_grid, y_itp[3]) - 1
     end
 
     i_1 = i_0 + 1
     j_1 = j_0 + 1
     k_0 == length(env.theta_grid) ? k_1 = 1 : k_1 = k_0 + 1
 
-    x_0 = env.x_grid[i_0]           # ISSUE: indexing to 0 (i_0 assigned in line 379)
-    y_0 = env.y_grid[j_0]           # ISSUE: indexing to 0 (j_0 assigned in line 385)
-    theta_0 = env.theta_grid[k_0]   # ISSUE: indexing to 0
+    x_0 = env.x_grid[i_0]
+    y_0 = env.y_grid[j_0]
+    theta_0 = env.theta_grid[k_0]
 
-    x_1 = env.x_grid[i_1]
+    if i_1 == 62
+        println("i_1 = ", i_1)
+        println("y[1] = ", y[1])
+        println("y_itp[1] = ", y_itp[1])
+    end
+
+    x_1 = env.x_grid[i_1]   
+    # ISSUE: indexing over max bound
+    #   - says StepRange has 61 elements, throws error when indexed at 62
+    #   - x_grid[61] = 2.99, last node in x_grid
+    #   - issue in line 414, i_0 is set to max then i_1=i_0+1 breaks limit
+
     y_1 = env.y_grid[j_1]
     theta_1 = env.theta_grid[k_1]
 
-    x_d = (y[1] - x_0)/(x_1 - x_0)
-    y_d = (y[2] - y_0)/(y_1 - y_0)
-    theta_d = (y[3] - theta_0)/(theta_1 - theta_0)
+    x_d = (y_itp[1] - x_0)/(x_1 - x_0)
+    y_d = (y_itp[2] - y_0)/(y_1 - y_0)
+    theta_d = (y_itp[3] - theta_0)/(theta_1 - theta_0)
 
     u_000 = U[i_0, j_0, k_0]
     u_100 = U[i_1, j_0, k_0]
@@ -458,7 +551,7 @@ function HJB_planner(y_0, U, dt, env::Environment, veh::Vehicle)
         std_phi = 0
 
         # simulate forward one time step
-        y_k1 = runge_kutta_4(car_EoM, y_k, u_k, std_v, std_phi, dt, veh)
+        y_k1 = runge_kutta_4(y_k, u_k, std_v, std_phi, dt, car_EoM, veh)    # needs K_sub
         push!(y_path, y_k1)
 
         y_k = deepcopy(y_k1)
@@ -524,7 +617,7 @@ function optimal_action_HJB(y, U, env::Environment, veh::Vehicle)
 end
 
 # equations of motion for 3 DoF kinematic bicycle model
-function car_EoM(x, u, std_v, std_phi, param)
+function car_EoM(x, u, std_v, std_phi, param::Vehicle)
     w_v = std_v*randn(rng, Float64) .+ 0
     w_phi = std_phi*randn(rng, Float64) .+ 0
 
@@ -536,7 +629,7 @@ function car_EoM(x, u, std_v, std_phi, param)
 end
 
 # 4th-order Runge-Kutta integration scheme
-function runge_kutta_4(EoM::Function, x_k, u, std_v, std_phi, dt, param)
+function runge_kutta_4(x_k, u, std_v, std_phi, dt, EoM::Function, param::Vehicle)
     w1 = EoM(x_k, u, std_v, std_phi, param)
     w2 = EoM(x_k + w1*dt/2, u, std_v, std_phi, param)
     w3 = EoM(x_k + w2*dt/2, u, std_v, std_phi, param)

@@ -106,8 +106,8 @@ s_0_mcts = [-4, -8, -0.55*pi]
 dt = 0.1
 
 println("planning path 1")
-std_v = 0.02
-std_phi = 0.01
+std_v = 0.0
+std_phi = 0.0
 sims = 324
 w_max = 3
 
