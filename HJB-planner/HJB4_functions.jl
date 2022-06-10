@@ -1,23 +1,6 @@
-# notation:
-#   x_p - horizontal position
-#   y_p - vertical position
-#   x - point [x_p, y_p]
-#   y - pose [x, theta]
-#   z - path, parameterized by time
-#   sigma - speed control
-#   a - steering control
-#   T - target set
-#   f - dynamics
-#   rho - minimum turning radiuss
-#   u - value function for given dynamics and target set
-#   u_x, u_y, u_theta - partial derivatives of value function wrt x, y, theta
-
-using StaticArrays
 using LinearAlgebra
 using Random
 rng = MersenneTwister(1234)
-using BenchmarkTools
-using ProfileView
 
 algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
 
@@ -25,18 +8,23 @@ algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
 struct Environment
     h_xy::Float64
     h_theta::Float64
-    x_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-    y_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-    theta_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
+    h_v::Float64
+    x_grid::StepRangeLen
+    y_grid::StepRangeLen
+    theta_grid::StepRangeLen
+    v_grid::StepRangeLen
     W::Matrix{Float64}
     T_xy::Matrix{Float64}
     T_theta::Vector{Vector{Float64}}
+    T_v::Vector{Float64}
     O_vec::Vector{Matrix{Float64}}
 end
 
 struct Vehicle
     c_vf::Float64   # max forward speed [m/s]
     c_vb::Float64   # max backward speed [m/s]
+    c_af::Float64   # max forward accel [m/s^2]
+    c_ab::Float64   # max backward accel [m/s^2]
     c_phi::Float64  # max steering angle [rad]
     wb::Float64     # wheelbase [m]
     l::Float64      # length [m]
@@ -44,46 +32,11 @@ struct Vehicle
     b2a::Float64    # rear bumber to rear axle [m]
 end
 
-# finite difference approximations
-# (eq 30)
-function G_p1_ijk(theta_k, u_ip, u_jp, u_kp, u_kn, env::Environment, veh::Vehicle)
-    rho = veh.wb/tan(veh.c_phi)
-
-    num = env.h_xy/veh.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp + env.h_xy/(rho*env.h_theta)*min(u_kp, u_kn)
-    den = abs(cos(theta_k)) + abs(sin(theta_k)) + env.h_xy/(rho*env.h_theta)
-    G_p1 = num/den
-
-    return G_p1
-end
-
-# (eq 31)
-function F_p1_ijk(theta_k, u_ip, u_jp, env::Environment, veh::Vehicle)
-    num = env.h_xy/veh.c_vf + abs(cos(theta_k))*u_ip + abs(sin(theta_k))*u_jp
-    den = abs(cos(theta_k)) + abs(sin(theta_k))
-    F_p1 = num/den
-
-    return F_p1
-end
-
-# (eq 32)
-function G_n1_ijk(theta_k, u_in, u_jn, u_kp, u_kn, env::Environment, veh::Vehicle)
-    rho = veh.wb/tan(veh.c_phi)
-
-    num = env.h_xy/veh.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn + env.h_xy/(rho*env.h_theta)*min(u_kp, u_kn)
-    den = abs(cos(theta_k)) + abs(sin(theta_k)) + env.h_xy/(rho*env.h_theta)
-    G_n1 = num/den
-
-    return G_n1
-end
-
-# (eq 33)
-function F_n1_ijk(theta_k, u_in, u_jn, env::Environment, veh::Vehicle)
-    num = env.h_xy/veh.c_vb + abs(cos(theta_k))*u_in + abs(sin(theta_k))*u_jn
-    den = abs(cos(theta_k)) + abs(sin(theta_k))
-    F_n1 = num/den
-
-    return F_n1
-end
+# ?: should velocity limits be used to define state space bounds?
+#   - seems like it could be more of an "obstacle" in the state space, rather than the defined edge
+#   - consider that x,y(,theta?) are defined by environment, v is defined by vehicle
+#   - BUT: axes of state space are not physical representation of environment, they represent the state of the vehicle
+#       - so think makes sense as defined boundary
 
 # target set checker
 function in_target_set(y, env::Environment, veh::Vehicle)
@@ -120,6 +73,11 @@ function in_target_set(y, env::Environment, veh::Vehicle)
         return false
     end
 
+    # check velocity
+    if y[4] < minimum(env.T_v) || y[4] > maximum(env.T_v)
+        return false
+    end
+
     return true
 end
 
@@ -129,7 +87,7 @@ function in_obstacle_set(y, env::Environment, veh::Vehicle)
 
     for c in V_c 
         for Oi in env.O_vec
-            rows = [collect(1:size(Oi, 1)); 1]  # TO-DO: fairly large impact on runtime
+            rows = [collect(1:size(Oi, 1)); 1]
 
             ineqs = zeros(Bool, size(Oi, 1))
             for i in 1:size(Oi, 1)
@@ -157,8 +115,9 @@ function in_obstacle_set(y, env::Environment, veh::Vehicle)
     return false
 end
 
-# workspace checker
-function in_workspace(y, env::Environment, veh::Vehicle)
+# state space checker
+# ?: is this actually used somewhere?
+function in_state_space(y, env::Environment, veh::Vehicle)
     V_c = pose_to_corners(y, veh::Vehicle)
 
     for c in V_c 
@@ -181,11 +140,18 @@ function in_workspace(y, env::Environment, veh::Vehicle)
         end
     end
 
+    # check velocity
+    if y[4] < minimum(env.T_v) || y[4] > maximum(env.T_v)
+        return false
+    end
+
     return true
 end
 
-function on_boundary(i, j, k, env::Environment)
-    if i == 1 || i == size(env.x_grid,1) || j == 1 || j == size(env.y_grid,1)
+# ISSUE: want boundary velocities to still be valid
+#   - want to make boundaries inclusive (including for xy points)
+function on_boundary(i, j, k, p, env::Environment)
+    if (i == 1 || i == size(env.x_grid,1)) || (j == 1 || j == size(env.y_grid,1)) || (p == 1 || p == size(env.v_grid,1))
         return true
     else
         return false
@@ -214,40 +180,43 @@ end
 
 # initialize value approximations
 function initialize_value_array(env::Environment, veh::Vehicle)
-    Up = zeros(Float64, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
-    Ip = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
-    T = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
-    O = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
+    Up = zeros(Float64, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1), size(env.v_grid,1)))
+    Ip = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1), size(env.v_grid,1)))
+    T = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1), size(env.v_grid,1)))
+    O = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1), size(env.v_grid,1)))
 
     for i in 1:size(env.x_grid,1)
         for j in 1:size(env.y_grid,1)
             for k in 1:size(env.theta_grid,1)
-                x_i = env.x_grid[i]
-                y_j = env.y_grid[j]
-                theta_k = env.theta_grid[k]
+                for p in 1:size(env.v_grid,1)
+                    x_i = env.x_grid[i]
+                    y_j = env.y_grid[j]
+                    theta_k = env.theta_grid[k]
+                    v_p = env.v_grid[p]
 
-                y_ijk = [x_i, y_j, theta_k]
+                    y_ijk = [x_i, y_j, theta_k, v_p]
 
-                if in_target_set(y_ijk, env, veh) == true
-                    Up[i,j,k] = 0.0
-                    Ip[i,j,k] = true
-                    T[i,j,k] = true
-                elseif on_boundary(i, j, k, env) == true || in_obstacle_set(y_ijk, env, veh) == true
-                    Up[i,j,k] = 30.0
-                    Ip[i,j,k] = false
-                    O[i,j,k] = true
-                else
-                    Up[i,j,k] = 20.0
-                    Ip[i,j,k] = false
-                    T[i,j,k] = false
-                    O[i,j,k] = false
+                    if in_target_set(y_ijk, env, veh) == true
+                        Up[i,j,k,p] = 0.0
+                        Ip[i,j,k,p] = true
+                        T[i,j,k,p] = true
+
+                    # ISSUE: initializes everything at 30.0 -> all on boundary?
+                    elseif on_boundary(i, j, k, p, env) == true #|| in_obstacle_set(y_ijk, env, veh) == true
+                        Up[i,j,k,p] = 30.0
+                        Ip[i,j,k,p] = false
+                        O[i,j,k,p] = true
+                    else
+                        # Up[i,j,k] = norm([env.x_grid[i] - 0, env.y_grid[j] - 0])
+                        Up[i,j,k,p] = 20.0
+                        Ip[i,j,k,p] = false
+                        T[i,j,k,p] = false
+                        O[i,j,k,p] = false
+                    end
                 end
             end
         end
     end
-
-    # T_stat = SArray{Tuple{size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)}, Bool}(T)
-    # O_stat = SArray{Tuple{size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)}, Bool}(O)
 
     U = deepcopy(Up)
     I = deepcopy(Ip)
@@ -255,104 +224,98 @@ function initialize_value_array(env::Environment, veh::Vehicle)
     return U, Up, I, Ip, T, O
 end
 
-# computes value update for grid point ijk using HJB finite difference scheme
-function update_value(U, i, j, k, env::Environment, veh::Vehicle)
-    theta_k = env.theta_grid[k]
+# ISSUE: looks like memory allocation (285 occurences) is biggest difference from Takei
+#   - most were 285 in first step, believe these were non-initialized states
+#   - a few were 315, possibly states with new info (entered if-true statement)
+#   - actually more allocations without x= (285 -> 300) ???
+#   - issue to recreate up_arr, etc every time function runs? (new allocation?)
 
-    xi_k = Int(sign(cos(theta_k)))
-    nu_k = Int(sign(sin(theta_k)))
+#   - down to 283,297 allocations
+#   - down to 115,127 allocations
 
-    ip = i + xi_k
-    in = i - xi_k
-    jp = j + nu_k
-    jn = j - nu_k
-    k == size(env.theta_grid,1)-1 ? kp = 1 : kp = k + 1
-    k == 1 ? kn = size(env.theta_grid,1)-1 : kn = k - 1
+#   - spikes to  290 allocations when node is initialized (so, most of the time) (or only 139?)
+#   - runtimes get longer over time, even with same number of allocations
 
-    u_ip = U[ip,j,k] 
-    u_in = U[in,j,k]
-    u_jp = U[i,jp,k]
-    u_jn = U[i,jn,k]
-    u_kp = U[i,j,kp]
-    u_kn = U[i,j,kn]
+#   - Static Arrays?
 
-    # compute u_ijk update
-    G_p1 = G_p1_ijk(theta_k, u_ip, u_jp, u_kp, u_kn, env, veh)
-    F_p1 = F_p1_ijk(theta_k, u_ip, u_jp, env, veh)
-    G_n1 = G_n1_ijk(theta_k, u_in, u_jn, u_kp, u_kn, env, veh)
-    F_n1 = F_n1_ijk(theta_k, u_in, u_jn, env, veh)
-
-    up_ijk = min(G_p1, F_p1, G_n1, F_n1, U[i,j,k])
-
-    return up_ijk
-end
-
-# use modules
-# Julia workflows
-
-# @code_warntype
+# a = @allocated begin
+#     Block to test
+# end; if a > 0 println(a) end
 
 #   - look at type stability
-function update_value2(U, I, i::Int, j::Int, k::Int, A, env::Environment, veh::Vehicle)   
-    x1 = env.x_grid[i]
-    x2 = env.y_grid[j]
-    x3 = env.theta_grid[k]
+function update_value(U, I, i::Int, j::Int, k::Int, p::Int, A, EoM::Function, env::Environment, veh::Vehicle)
+    theta_k = env.theta_grid[k]
 
-    x = SVector{3, Float64}(x1, x2, x3)
+    x = [env.x_grid[i],
+        env.y_grid[j],
+        theta_k,
+        env.v_grid[p]]
 
     # compute u_ijk update
-    up_min = Inf
-    init_ijk = false
+    up_arr = zeros(Float64, size(A,1))
+    init_ijkp = false
 
-    # code in this loop gets iterated the most
+    # ISSUE: 60 allocations in for loop
+    #   - 22 allocations for each iteration
+    #   - only needs to keep track of up_arr, init_ijk
+    # @time begin
     for ia in 1:size(A,1)
-        xdot = car_EoM(x, A[ia], veh)
+        a_a = A[ia][1]
+        a_phi = A[ia][2]
+
+        xdot = EoM(x, [a_a, a_phi], veh)
     
         # calculate upwind indices
-        i_uw = i + Int(sign(xdot[1]))
+        i_uw = i + Int(sign(xdot[1]))   # 2 allocations
         j_uw = j + Int(sign(xdot[2]))
         k_uw = k + Int(sign(xdot[3]))
+        p_uw = p + Int(sign(xdot[4]))
 
         k_uw == size(env.theta_grid,1)+1 ? k_uw = 2 : k_uw = k_uw
         k_uw == 0 ? k_uw = size(env.theta_grid,1)-1 : k_uw = k_uw
 
-        if any((I[i_uw,j,k], I[i,j_uw,k], I[i,j,k_uw])) == true
+        if any([I[i_uw,j,k,p], I[i,j_uw,k,p], I[i,j,k_uw,p], I[i,j,k,p_uw]]) == true
+            # @time begin # 4 allocations
             # pull value from upwind points
-            u_i_uw = U[i_uw, j, k]
-            u_j_uw = U[i, j_uw, k]
-            u_k_uw = U[i, j, k_uw]
+            u_i_uw = U[i_uw, j, k, p]
+            u_j_uw = U[i, j_uw, k, p]
+            u_k_uw = U[i, j, k_uw, p]
+            u_p_uw = U[i, j, k, p_uw]
 
             # calculate value for given action
-            upa_ijk = val_eq(xdot, u_i_uw, u_j_uw, u_k_uw, env)
+            up_ijkp = val_eq(xdot, u_i_uw, u_j_uw, u_k_uw, u_p_uw, env)  # 1 allocation
 
-            if upa_ijk < up_min
-                up_min = upa_ijk
-            end
-
-            init_ijk = true
+            up_arr[ia] = up_ijkp
+            init_ijkp = true
+            # end
+        else
+            up_arr[ia] = Inf
+            continue
         end
+    # end
     end
 
-    if init_ijk == true
-        up_ijk = up_min
+    if init_ijkp == true
+        up_ijkp = minimum(up_arr)
     else
-        up_ijk = U[i,j,k]
+        up_ijkp = U[i,j,k,p]
     end
 
-    return up_ijk, init_ijk
+    return up_ijkp, init_ijkp
 end
 
-function val_eq(xdot::SVector{3, Float64}, u_i_uw::Float64, u_j_uw::Float64, u_k_uw::Float64, env::Environment)
+function val_eq(xdot::Vector{Float64}, u_i_uw::Float64, u_j_uw::Float64, u_k_uw::Float64, u_p_uw::Float64, env::Environment)
     s1 = sign(xdot[1])
     s2 = sign(xdot[2])
     s3 = sign(xdot[3])
+    s4 = sign(xdot[4])
 
-    num = 1.0 + s1/env.h_xy*xdot[1]*u_i_uw + s2/env.h_xy*xdot[2]*u_j_uw + s3/env.h_theta*xdot[3]*u_k_uw
-    den = s1/env.h_xy*xdot[1] + s2/env.h_xy*xdot[2] + s3/env.h_theta*xdot[3]
+    num = 1.0 + s1/env.h_xy*xdot[1]*u_i_uw + s2/env.h_xy*xdot[2]*u_j_uw + s3/env.h_theta*xdot[3]*u_k_uw + s4/env.h_v*xdot[4]*u_p_uw
+    den = s1/env.h_xy*xdot[1] + s2/env.h_xy*xdot[2] + s3/env.h_theta*xdot[3] + s4/env.h_v*xdot[4]
 
-    u_ijk = num/den
+    u_ijkp = num/den
 
-    return u_ijk
+    return u_ijkp
 end
 
 # main function to iteratively calculate value function using HJB
@@ -360,22 +323,36 @@ function solve_HJB_PDE(du_tol, max_steps, env::Environment, veh::Vehicle, anim_b
     N_x = size(env.x_grid,1)
     N_y = size(env.y_grid,1)
     N_theta = size(env.theta_grid,1)
+    N_v = size(env.v_grid,1)
 
     # define ijk iterators for Gauss-Seidel sweeping scheme
-    gs_sweeps = [[2:N_x-1, 2:N_y-1, 1:N_theta-1],     # FFF
-                [2:N_x-1, 2:N_y-1, reverse(1:N_theta-1)],  # FFB
-                [2:N_x-1, reverse(2:N_y-1), 1:N_theta-1],  # FBF
-                [reverse(2:N_x-1), 2:N_y-1, 1:N_theta-1],  # BFF
-                [2:N_x-1, reverse(2:N_y-1), reverse(1:N_theta-1)], # FBB
-                [reverse(2:N_x-1), reverse(2:N_y-1), 1:N_theta-1], # BBF
-                [reverse(2:N_x-1), 2:N_y-1, reverse(1:N_theta-1)], # BFB
-                [reverse(2:N_x-1), reverse(2:N_y-1), reverse(1:N_theta-1)]]   # BBB
+    gs_sweeps = [[2:N_x-1, 2:N_y-1, 1:N_theta-1, 2:N_v-1],     # FFFF
+                [2:N_x-1, 2:N_y-1, reverse(1:N_theta-1), 2:N_v-1],  # FFBF
+                [2:N_x-1, reverse(2:N_y-1), 1:N_theta-1, 2:N_v-1],  # FBFF
+                [reverse(2:N_x-1), 2:N_y-1, 1:N_theta-1, 2:N_v-1],  # BFFF
+                [2:N_x-1, reverse(2:N_y-1), reverse(1:N_theta-1), 2:N_v-1], # FBBF
+                [reverse(2:N_x-1), reverse(2:N_y-1), 1:N_theta-1, 2:N_v-1], # BBFF
+                [reverse(2:N_x-1), 2:N_y-1, reverse(1:N_theta-1), 2:N_v-1], # BFBF
+                [reverse(2:N_x-1), reverse(2:N_y-1), reverse(1:N_theta-1), 2:N_v-1],   # BBBF
+                [2:N_x-1, 2:N_y-1, 1:N_theta-1, reverse(2:N_v-1)],     # FFFB
+                [2:N_x-1, 2:N_y-1, reverse(1:N_theta-1), reverse(2:N_v-1)],  # FFBB
+                [2:N_x-1, reverse(2:N_y-1), 1:N_theta-1, reverse(2:N_v-1)],  # FBFB
+                [reverse(2:N_x-1), 2:N_y-1, 1:N_theta-1, reverse(2:N_v-1)],  # BFFB
+                [2:N_x-1, reverse(2:N_y-1), reverse(1:N_theta-1), reverse(2:N_v-1)], # FBBB
+                [reverse(2:N_x-1), reverse(2:N_y-1), 1:N_theta-1, reverse(2:N_v-1)], # BBFB
+                [reverse(2:N_x-1), 2:N_y-1, reverse(1:N_theta-1), reverse(2:N_v-1)], # BFBB
+                [reverse(2:N_x-1), reverse(2:N_y-1), reverse(1:N_theta-1), reverse(2:N_v-1)]] # BBBB
 
-    A = [[a_v,a_phi] for a_v in [-veh.c_vb, veh.c_vf], a_phi in [-veh.c_phi, 0.0, veh.c_phi]]
-    A = reshape(A, (6,1))
+    A = [[a_a,a_phi] for a_a in [-veh.c_ab, 0.0, veh.c_af], a_phi in [-veh.c_phi, 0.0, veh.c_phi]]
+    A = reshape(A, (9,1))
 
     # initialize U, Up, I
     U, Up, I, Ip, T, O = initialize_value_array(env, veh)
+
+    # for (p,v) in enumerate(env.v_grid)
+    #     println("v = ", v)
+    #     display(U[:,:,1,p])
+    # end
 
     # test_ids = [[2, 2, 16],
     #             [3, 3, 16],
@@ -418,16 +395,17 @@ function solve_HJB_PDE(du_tol, max_steps, env::Environment, veh::Vehicle, anim_b
         for i in sweep[1]
             for j in sweep[2]
                 for k in sweep[3]
-                    if T[i,j,k] == false && O[i,j,k] == false
-                        # Up[i,j,k] = update_value(U, i, j, k, env, veh)
-                        Up[i,j,k], Ip[i,j,k] = update_value2(U, I, i, j, k, A, env, veh)
+                    for p in sweep[4]
+                        if T[i,j,k,p] == false && O[i,j,k,p] == false    
+                            Up[i,j,k,p], Ip[i,j,k,p] = update_value(U, I, i, j, k, p, A, car4_EoM, env, veh)
+                        end
                     end
                 end
             end
         end
 
-        Up[:,:,end] = deepcopy(Up[:,:,1])
-        Ip[:,:,end] = deepcopy(Ip[:,:,1])
+        Up[:,:,end,:] = deepcopy(Up[:,:,1,:])
+        Ip[:,:,end,:] = deepcopy(Ip[:,:,1,:])
 
         # compare U and Up to check convergence
         dU = Up - U
@@ -443,9 +421,9 @@ function solve_HJB_PDE(du_tol, max_steps, env::Environment, veh::Vehicle, anim_b
         # push!(U_hist, row)
         # row = []
 
-        # println("step: ", step, ", du_max = ", du_max)
+        println("step: ", step, ", du_max = ", du_max)
 
-        if gs == 8
+        if gs == 2^4
             gs = 1
         else
             gs += 1
@@ -462,7 +440,14 @@ function solve_HJB_PDE(du_tol, max_steps, env::Environment, veh::Vehicle, anim_b
                 k_plot = searchsortedfirst(env.theta_grid, theta_plot) - 1
             end
 
-            p_k = heatmap(env.x_grid, env.y_grid, transpose(U[:,:,k_plot]), clim=(0,10),
+            v_plot = 0.75
+            if v_plot in env.v_grid
+                p_plot = indexin(v_plot, env.v_grid)[1]
+            else
+                p_plot = searchsortedfirst(env.v_grid, v_plot) - 1
+            end
+
+            p_k = heatmap(env.x_grid, env.y_grid, transpose(U[:,:,k_plot,p_plot]), clim=(0,30),
                         # xlim=(-3.5,5.5),
                         aspect_ratio=:equal, 
                         # size=(775,1050),
@@ -491,9 +476,9 @@ function solve_HJB_PDE(du_tol, max_steps, env::Environment, veh::Vehicle, anim_b
 
             plot_polygon(p_k, env.W, 2, :black, "Workspace")
             plot_polygon(p_k, env.T_xy, 2, :green, "Target Set")
-            plot_polygon(p_k, env.O_vec[1], 2, :red, "Obstacle")    # TO-DO: make obstacle plotting cleaner
-            plot_polygon(p_k, env.O_vec[2], 2, :red, "")
-            plot_polygon(p_k, env.O_vec[3], 2, :red, "")
+            # plot_polygon(p_k, env.O_vec[1], 2, :red, "Obstacle")    # TO-DO: make obstacle plotting cleaner
+            # plot_polygon(p_k, env.O_vec[2], 2, :red, "")
+            # plot_polygon(p_k, env.O_vec[3], 2, :red, "")
 
             # plot vehicle figure
             x_pos = 4.5
@@ -502,7 +487,7 @@ function solve_HJB_PDE(du_tol, max_steps, env::Environment, veh::Vehicle, anim_b
             x_max = x_pos + sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
             y_min = y_pos - sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
 
-            y = [x_pos, y_pos, env.theta_grid[k_plot]]
+            y = [x_pos, y_pos, env.theta_grid[k_plot], env.v_grid[p_plot]]
             
             V_c = pose_to_corners(y, unit_car)
             V = [[V_c[1][1] V_c[1][2]];
@@ -529,6 +514,8 @@ function solve_HJB_PDE(du_tol, max_steps, env::Environment, veh::Vehicle, anim_b
     #     plot!(p_conv, 0:step-1, getindex.(U_hist,i), label="id = $id")
     # end
     # display(p_conv)
+
+    display(U)
 
     return U
 end
@@ -636,7 +623,7 @@ function HJB_planner(y_0, U, dt, env::Environment, veh::Vehicle)
         push!(u_path, u_k)
 
         # simulate forward one time step
-        y_k1 = runge_kutta_4(y_k, u_k, dt, car_EoM, veh)    # needs K_sub
+        y_k1 = runge_kutta_4(y_k, u_k, dt, car4_EoM, veh)    # needs K_sub
         push!(y_path, y_k1)
 
         y_k = deepcopy(y_k1)
@@ -702,12 +689,11 @@ function optimal_action_HJB(y, U, env::Environment, veh::Vehicle)
 end
 
 # equations of motion for 3 DoF kinematic bicycle model
-function car_EoM(x::SVector{3, Float64}, u::Vector{Float64}, param::Vehicle)
-    xdot1 = u[1]*cos(x[3])
-    xdot2 = u[1]*sin(x[3])
-    xdot3 = u[1]*(1/param.wb)*tan(u[2])
-
-    xdot = SVector{3, Float64}(xdot1, xdot2, xdot3)
+function car4_EoM(x, u, param::Vehicle)
+    xdot = [x[4]*cos(x[3]),
+            x[4]*sin(x[3]),
+            x[4]*(1/param.wb)*tan(u[2]),
+            u[1]]
 
     return xdot
 end
