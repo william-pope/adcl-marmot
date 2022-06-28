@@ -42,20 +42,9 @@ function HJB_planner(x_0, U, dt, plan_steps, A, O, env::Environment, veh::Vehicl
     return x_path, u_path, step
 end
 
-# For Himanshu:
-    # TO-DO: remove backwards motion
-    # TO-DO: time the optimal_action
 
-    # return to POMDP: optimal action at given state
-
-    # dt = 0.1 vs dt = 1.0, what issues will appear? hitting obstacles? 
-    # reactive controller will modify velocity on path, how will this affect path execution and safety?
-
-    # delta rollout action
-
-    # calculate limited horizon path ahead of car, based on current velocity
-    #   - generate next 30 points and actions
-
+# dt = 0.1 vs dt = 1.0, what issues will appear? hitting obstacles? 
+# reactive controller will modify velocity on path, how will this affect path execution and safety?
 
 # ISSUE: front/back chattering is still an issue to be fixed
 #   - action computed from dot product of value gradient and f(x,u)

@@ -35,10 +35,10 @@ sort!(A, dims=1)
 #     [4.0 4.0];
 #     [-4.0 4.0]]
 
-W = [[-50.0 -50.0];
-    [50.0 -50.0];
-    [50.0 50.0];
-    [-50.0 50.0]]
+W = [[0.0 0.0];
+    [100.0 0.0];
+    [100.0 100.0];
+    [0.0 100.0]]
 
 # define target set
 # T_xy = [[-0.5 4.5];
@@ -56,10 +56,10 @@ W = [[-50.0 -50.0];
 #         [0.75 0.75];
 #         [-0.75 0.75]]
 
-T_xy = [[45.0 33.0];
-        [50.0 33.0];
-        [50.0 37.0];
-        [45.0 37.0]]
+T_xy = [[95.0 83.0];
+        [100.0 83.0];
+        [100.0 87.0];
+        [95.0 87.0]]
 
 T_theta = [[-pi, pi]]
 
@@ -79,16 +79,16 @@ O3 = [[-1.5 -4.5];
     [-0.3 -3.0];
     [-1.5 -3.0]]
 
-OB = [[-20.0 -50.0];
-    [50.0 -50.0];
-    [50.0 20.0];
-    [-20.0 20.0]]
+OB = [[30.0 0.0];
+    [100.0 0.0];
+    [100.0 70.0];
+    [30.0 70.0]]
 
 # O_vec = [O1, O2, O3]
 O_vec = [OB]
 
 # initialize state grid
-h_xy = 2.5
+h_xy = 1.0
 h_theta = deg2rad(15)
 
 env = Environment(h_xy, 
@@ -105,16 +105,13 @@ env = Environment(h_xy,
 # 3) MAIN --- --- ---
 println("\nstart --- --- ---")
 
-# ISSUE: does value estimate match actual path length (time)
-#   - is this ok/expected? look into further
-
 algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
 algs_path_nuc = "/adcl/..."
 algs_path = algs_path_mac
 
 # calculate HJB
-run_HJB = false
-plot_results = true
+run_HJB = true
+plot_results = false
 
 if run_HJB == true
     du_tol = 0.01
@@ -137,28 +134,28 @@ else
     @load algs_path*"HJB-planner/bson/O.bson" O
 end
 
-# generate optimal action for given state
-x_0 = [-35.2, -45.1, 0.51*pi]
+# # generate optimal action for given state
+# x_0 = [15.2, 5.1, 0.51*pi]
 
-@btime u_0 = HJB_action(x_0, U_HJB, A, O, env, veh)
+# @btime HJB_action(x_0, U_HJB, A, O, env, veh)
 
-ProfileView.@profview for _ in 1:300
-    HJB_action(x_0, U_HJB, A, O, env, veh)
-end
+# ProfileView.@profview for _ in 1:1000
+#     HJB_action(x_0, U_HJB, A, O, env, veh)
+# end
 
 # generate optimal path
-x_0 = [-35.2, -45.1, 0.51*pi]
+x_0 = [15.2, 5.1, 0.51*pi]
 
 dt = 0.01
-plan_steps = 1e4
+plan_steps = 2e4
 
-@btime x_path, u_path, step = HJB_planner(x_0, U_HJB, dt, plan_steps, A, O, env, veh)
-ProfileView.@profview HJB_planner(x_0, U_HJB, dt, plan_steps, A, O, env, veh)
+x_path, u_path, step = HJB_planner(x_0, U_HJB, dt, plan_steps, A, O, env, veh)
+# ProfileView.@profview HJB_planner(x_0, U_HJB, dt, plan_steps, A, O, env, veh)
 
 x_path, u_path = HJB_planner(x_0, U_HJB, dt, plan_steps, A, O, env, veh)
 
-# path_time = step*dt
-# println("path execution time: ", path_time, " sec")
+path_time = step*dt
+println("path execution time: ", path_time, " sec")
 
 
 # planner profiling
@@ -173,7 +170,7 @@ if plot_results == true
     # plot U as heat map
     anim = @animate for k_plot in 1:size(env.theta_grid,1)
         p_k = heatmap(env.x_grid, env.y_grid, 
-                    transpose(U_HJB[:,:,k_plot]), clim=(0,15),
+                    transpose(U_HJB[:,:,k_plot]), clim=(0,100),
                     aspect_ratio=:equal, 
                     size=(1000,1100),
                     xlabel="x-axis [m]", ylabel="y-axis [m]", 
@@ -204,8 +201,8 @@ if plot_results == true
         end
 
         # vehicle figure
-        x_pos = 4.5
-        y_pos = -1
+        x_pos = 110
+        y_pos = 45
 
         x_max = x_pos + sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
         y_min = y_pos - sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
@@ -223,9 +220,9 @@ if plot_results == true
         plot_polygon(p_k, V, 2, :blue, "Vehicle Orientation")
 
         theta_deg = round(rad2deg(x[3]), digits=1)
-        annotate!(x_pos, y_pos+2, text("theta [deg]:\n$theta_deg", 14))
+        annotate!(x_pos, y_pos+10, text("theta [deg]:\n$theta_deg", 14))
 
-        # display(p_k)
+        display(p_k)
     end
 
     # gif(anim, algs_path*"HJB-planner/figures/hjb_theta.gif", fps=4)
