@@ -84,11 +84,15 @@ OB = [[30.0 0.0];
     [100.0 70.0];
     [30.0 70.0]]
 
+# NEW: circular obstacles defined as [x, y, r], converted to polygon overapproximation
+OC1 = circle_to_polygon([65.0, 35.0, 20.0])
+OC2 = circle_to_polygon([35.0, 70.0, 10.0])
+
 # O_vec = [O1, O2, O3]
-O_vec = [OB]
+O_vec = [OC1, OC2]
 
 # initialize state grid
-h_xy = 1.0
+h_xy = 2.0
 h_theta = deg2rad(15)
 
 env = Environment(h_xy, 
@@ -111,7 +115,7 @@ algs_path = algs_path_mac
 
 # calculate HJB
 run_HJB = true
-plot_results = false
+plot_results = true
 
 if run_HJB == true
     du_tol = 0.01

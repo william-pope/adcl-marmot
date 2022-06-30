@@ -104,6 +104,30 @@ function in_obstacle_set(y, env::Environment, veh::Vehicle)
     return false
 end
 
+function circle_to_polygon(OC_cir)
+    x_c = OC_cir[1]
+    y_c = OC_cir[2]
+    r_c = OC_cir[3]
+
+    # number of points used to discretize edge of circle
+    pts = 16
+
+    # circle radius is used as midpoint radius for polygon faces
+    r_p = r_c/cos(pi/pts)
+
+    theta_rng = range(0, 2*pi, pts+1)
+    OC = Array{Float64}(undef, pts+1, 2)
+
+    for (i, theta) in enumerate(theta_rng)
+        OC[i,1] = x_c + r_p*cos(theta)
+        OC[i,2] = y_c + r_p*sin(theta)
+    end
+
+    OC = OC[1:end-1, 1:end]
+
+    return OC
+end
+
 # workspace checker
 function in_workspace(y, env::Environment, veh::Vehicle)
     E = pose_to_edges(y, veh::Vehicle)
