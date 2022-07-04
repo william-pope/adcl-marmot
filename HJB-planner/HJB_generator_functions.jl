@@ -7,6 +7,7 @@ using BenchmarkTools
 using ProfileView
 
 algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
+algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 
 # define discretized grid struct
 struct Environment

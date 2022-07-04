@@ -20,79 +20,42 @@ A = reshape(Am, (length(Am),1))
 sort!(A, dims=1)
 
 # define workspace
-# W = [[-3.010 -7.023];
-#     [3.010 -7.023];
-#     [3.010 7.023];
-#     [-3.010 7.023]]
-
-# W = [[-3.0 -3.0];
-#     [3.0 -3.0];
-#     [3.0 3.0];
-#     [-3.0 3.0]]
-
-# W = [[-4.0 -4.0];
-#     [4.0 -4.0];
-#     [4.0 4.0];
-#     [-4.0 4.0]]
-
 W = [[0.0 0.0];
-    [100.0 0.0];
-    [100.0 100.0];
-    [0.0 100.0]]
+    [6.020 0.0];
+    [6.020 14.046];
+    [0.0 14.026]]
+
+# W = [[0.0 0.0];
+#     [100.0 0.0];
+#     [100.0 100.0];
+#     [0.0 100.0]]
 
 # define target set
-# T_xy = [[-0.5 4.5];
-#         [0.5 4.5];
-#         [0.5 5.5];
-#         [-0.5 5.5]]
+T_xy = [[2.5 13.0];
+        [3.5 13.0];
+        [3.5 14.0];
+        [2.5 14.0]]
 
-# T_xy = [[-1.0 -1.0];
-#         [1.0 -1.0];
-#         [1.0 1.0];
-#         [-1.0 1.0]]
-
-# T_xy = [[-0.75 -0.75];
-#         [0.75 -0.75];
-#         [0.75 0.75];
-#         [-0.75 0.75]]
-
-T_xy = [[95.0 83.0];
-        [100.0 83.0];
-        [100.0 87.0];
-        [95.0 87.0]]
+# T_xy = [[95.0 83.0];
+#         [100.0 83.0];
+#         [100.0 87.0];
+#         [95.0 87.0]]
 
 T_theta = [[-pi, pi]]
 
 # define obstacles
-O1 = [[-2.0 2.0];
-    [1.0 2.0];
-    [1.0 2.8];
-    [-2.0 2.8]]
+# - circular obstacles defined as [x, y, r], converted to polygon overapproximation
+OC1 = circle_to_polygon([1.75, 3.5, 0.5])
+OC2 = circle_to_polygon([4.25, 6.5, 0.5])
+OC3 = circle_to_polygon([3.0, 10.0, 0.5])
 
-O2 = [[1.2 -2.5];
-    [2.0 -2.5];
-    [2.0 0.5];
-    [1.2 0.5]]
+# OC1 = circle_to_polygon([65.0, 35.0, 20.0])
+# OC2 = circle_to_polygon([35.0, 70.0, 10.0])
 
-O3 = [[-1.5 -4.5];
-    [-0.3 -4.5];
-    [-0.3 -3.0];
-    [-1.5 -3.0]]
-
-OB = [[30.0 0.0];
-    [100.0 0.0];
-    [100.0 70.0];
-    [30.0 70.0]]
-
-# NEW: circular obstacles defined as [x, y, r], converted to polygon overapproximation
-OC1 = circle_to_polygon([65.0, 35.0, 20.0])
-OC2 = circle_to_polygon([35.0, 70.0, 10.0])
-
-# O_vec = [O1, O2, O3]
-O_vec = [OC1, OC2]
+O_vec = [OC1, OC2, OC3]
 
 # initialize state grid
-h_xy = 2.0
+h_xy = 0.1
 h_theta = deg2rad(15)
 
 env = Environment(h_xy, 
@@ -110,8 +73,9 @@ env = Environment(h_xy,
 println("\nstart --- --- ---")
 
 algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
-algs_path_nuc = "/adcl/..."
-algs_path = algs_path_mac
+algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
+
+algs_path = algs_path_nuc
 
 # calculate HJB
 run_HJB = true
@@ -121,42 +85,42 @@ if run_HJB == true
     du_tol = 0.01
     max_steps = 5000
     anim_bool = false
-    @btime U_HJB, T, O = solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
-    U_HJB, T, O = solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
+    # @btime U_HJB, target_mat, obstacle_mat = solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
+    U_HJB, target_mat, obstacle_mat = solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
 
     N_grid = size(env.x_grid,1)*size(env.y_grid,1)*size(env.theta_grid,1)
     println("total grid nodes = ", N_grid)
 
     @save algs_path*"HJB-planner/bson/U_HJB.bson" U_HJB
-    @save algs_path*"HJB-planner/bson/T.bson" T
-    @save algs_path*"HJB-planner/bson/O.bson" O
+    @save algs_path*"HJB-planner/bson/target_mat.bson" target_mat
+    @save algs_path*"HJB-planner/bson/obstacle_mat.bson" obstacle_mat
     @save algs_path*"HJB-planner/bson/env.bson" env
     @save algs_path*"HJB-planner/bson/veh.bson" veh
 else
     @load algs_path*"HJB-planner/bson/U_HJB.bson" U_HJB
-    @load algs_path*"HJB-planner/bson/T.bson" T
-    @load algs_path*"HJB-planner/bson/O.bson" O
+    @load algs_path*"HJB-planner/bson/target_mat.bson" target_mat
+    @load algs_path*"HJB-planner/bson/obstacle_mat.bson" obstacle_mat
 end
 
 # # generate optimal action for given state
 # x_0 = [15.2, 5.1, 0.51*pi]
 
-# @btime HJB_action(x_0, U_HJB, A, O, env, veh)
+# @btime HJB_action(x_0, U_HJB, A, obstacle_mat, env, veh)
 
 # ProfileView.@profview for _ in 1:1000
-#     HJB_action(x_0, U_HJB, A, O, env, veh)
+#     HJB_action(x_0, U_HJB, A, obstacle_mat, env, veh)
 # end
 
 # generate optimal path
-x_0 = [15.2, 5.1, 0.51*pi]
+x_0 = [2.0, 0.5, 0.5*pi]
 
 dt = 0.01
 plan_steps = 2e4
 
-x_path, u_path, step = HJB_planner(x_0, U_HJB, dt, plan_steps, A, O, env, veh)
-# ProfileView.@profview HJB_planner(x_0, U_HJB, dt, plan_steps, A, O, env, veh)
+x_path, u_path, step = HJB_planner(x_0, U_HJB, dt, plan_steps, A, obstacle_mat, env, veh)
+# ProfileView.@profview HJB_planner(x_0, U_HJB, dt, plan_steps, A, obstacle_mat, env, veh)
 
-x_path, u_path = HJB_planner(x_0, U_HJB, dt, plan_steps, A, O, env, veh)
+x_path, u_path = HJB_planner(x_0, U_HJB, dt, plan_steps, A, obstacle_mat, env, veh)
 
 path_time = step*dt
 println("path execution time: ", path_time, " sec")
@@ -174,9 +138,9 @@ if plot_results == true
     # plot U as heat map
     anim = @animate for k_plot in 1:size(env.theta_grid,1)
         p_k = heatmap(env.x_grid, env.y_grid, 
-                    transpose(U_HJB[:,:,k_plot]), clim=(0,100),
+                    transpose(U_HJB[:,:,k_plot]), clim=(0,20),
                     aspect_ratio=:equal, 
-                    size=(1000,1100),
+                    size=(800,1000),
                     xlabel="x-axis [m]", ylabel="y-axis [m]", 
                     # title="HJB Value Function",
                     titlefontsize = 20,
@@ -188,16 +152,6 @@ if plot_results == true
                     left_margin = -8*Plots.mm,
                     bottom_margin = 8*Plots.mm)
 
-        # p_k = plot(xlim=(-3.5,5.5),
-        #     aspect_ratio=:equal, size=(750,1050),
-        #     xlabel="x-axis [m]", ylabel="y-axis [m]", 
-        #     titlefontsize = 20,
-        #     legend=:topright,
-        #     legend_font_pointsize = 11,
-        #     top_margin = -30*Plots.mm,
-        #     left_margin = 8*Plots.mm,
-        #     bottom_margin = 0*Plots.mm)
-
         plot_polygon(p_k, env.W, 2, :black, "Workspace")
         plot_polygon(p_k, env.T_xy, 2, :green, "Target Set")
         for O in env.O_vec
@@ -205,8 +159,8 @@ if plot_results == true
         end
 
         # vehicle figure
-        x_pos = 110
-        y_pos = 45
+        x_pos = 8
+        y_pos = 6
 
         x_max = x_pos + sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
         y_min = y_pos - sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
@@ -230,7 +184,6 @@ if plot_results == true
     end
 
     # gif(anim, algs_path*"HJB-planner/figures/hjb_theta.gif", fps=4)
-
 
     # plot path
     p_path = plot(aspect_ratio=:equal, size=(1400,1300), 
