@@ -31,10 +31,10 @@ W = [[0.0 0.0];
 #     [0.0 100.0]]
 
 # define target set
-T_xy = [[2.25 10.0];
-        [3.25 10.0];
-        [3.25 11.0];
-        [2.25 11.0]]
+T_xy = [[2.35 10.2];
+        [3.15 10.2];
+        [3.15 11.0];
+        [2.35 11.0]]
 
 # T_xy = [[95.0 83.0];
 #         [100.0 83.0];
@@ -45,9 +45,9 @@ T_theta = [[-pi, pi]]
 
 # define obstacles
 # - circular obstacles defined as [x, y, r], converted to polygon overapproximation
-OC1 = circle_to_polygon([1.5, 3.0, 0.5])
-OC2 = circle_to_polygon([4.0, 6.0, 0.5])
-OC3 = circle_to_polygon([2.2, 7.25, 0.5])
+OC1 = circle_to_polygon([1.5, 3.0, 0.6])
+OC2 = circle_to_polygon([4.0, 5.0, 0.6])
+OC3 = circle_to_polygon([2.8, 8.0, 0.6])
 
 # OC1 = circle_to_polygon([65.0, 35.0, 20.0])
 # OC2 = circle_to_polygon([35.0, 70.0, 10.0])
@@ -55,7 +55,7 @@ OC3 = circle_to_polygon([2.2, 7.25, 0.5])
 O_vec = [OC1, OC2, OC3]
 
 # initialize state grid
-h_xy = 0.5
+h_xy = 0.1
 h_theta = deg2rad(9)
 
 env = Environment(h_xy, 
@@ -75,10 +75,10 @@ println("\nstart --- --- ---")
 algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
 algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 
-algs_path = algs_path_mac
+algs_path = algs_path_nuc
 
 # calculate HJB
-run_HJB = true
+run_HJB = false
 plot_U_HJB = true
 plot_paths = true
 
@@ -86,7 +86,7 @@ if run_HJB == true
     du_tol = 0.01
     max_steps = 5000
     anim_bool = false
-    @btime solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
+    # @btime solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
     U_HJB, target_mat, obstacle_mat = solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
 
     N_grid = size(env.x_grid,1)*size(env.y_grid,1)*size(env.theta_grid,1)

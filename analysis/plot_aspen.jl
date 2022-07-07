@@ -21,10 +21,10 @@ hist_path = hist_path_nuc
 # load planner histories
 @load hist_path*"s_hist.bson" s_hist
 veh_hist = []
-ped1_hist = []
+# ped1_hist = []
 for s_k in s_hist
     push!(veh_hist, s_k[1:3])
-    push!(ped1_hist, s_k[4:5])
+    # push!(ped1_hist, s_k[4:5])
 end
 
 # load VRPN histories
@@ -34,17 +34,17 @@ for s_k in csv
     push!(veh_hist_vrpn, s_k)
 end
 
-csv = CSV.File(hist_path*"ped1_hist_vrpn.csv")
-ped1_hist_vrpn = []
-for s_kv in csv
-    push!(ped1_hist_vrpn, s_kv)
-end
+# csv = CSV.File(hist_path*"ped1_hist_vrpn.csv")
+# ped1_hist_vrpn = []
+# for s_kv in csv
+#     push!(ped1_hist_vrpn, s_kv)
+# end
 
 @show size(veh_hist,1)
 @show size(veh_hist_vrpn,1)
 
 # plot optimal path from y_0 to target set
-p_path = plot(aspect_ratio=:equal, size=(750,1050), 
+p_path = plot(aspect_ratio=:equal, size=(605,1050), 
             xlabel="x-axis [m]", ylabel="y-axis [m]",
             title="Vicon Output", 
             legend=false,
@@ -53,27 +53,28 @@ p_path = plot(aspect_ratio=:equal, size=(750,1050),
             top_margin = -5*Plots.mm,
             left_margin = 4*Plots.mm)
 
-plot_polygon(p_path, env.W, 2, :black, "Workspace")
-plot_polygon(p_path, env.T_xy, 2, :green, "Target Set")
-# plot_polygon(p_path, env.O_vec[1], 2, :red, "Obstacle")
-# plot_polygon(p_path, env.O_vec[2], 2, :red, "")
-# plot_polygon(p_path, env.O_vec[3], 2, :red, "")]
+plot_polygon(p_path, env.W, 3, :black, "Workspace")
+plot_polygon(p_path, env.T_xy, 3, :green, "Target Set")
+plot_polygon(p_path, env.O_vec[1], 3, :red, "Obstacle")
+    for O in env.O_vec
+        plot_polygon(p_path, O, 3, :red, "")
+    end
 
-plot!(p_path, getindex.(veh_hist,1), getindex.(veh_hist,2).+7,
+plot!(p_path, getindex.(veh_hist,1), getindex.(veh_hist,2),
     linewidth=0, markershape=:circle, markersize=3, markerstrokewidth=0 ,
     label="Planning Points")
 
-plot!(p_path, getindex.(veh_hist_vrpn,1), getindex.(veh_hist_vrpn,2).+7,
+plot!(p_path, getindex.(veh_hist_vrpn,1), getindex.(veh_hist_vrpn,2),
     linewidth=1,
     label="Vicon Output")
 
-plot!(p_path, getindex.(ped1_hist,1), getindex.(ped1_hist,2).+7,
-    linewidth=0, markershape=:circle, markersize=3, markerstrokewidth=0 ,
-    label="Planning Points")
+# plot!(p_path, getindex.(ped1_hist,1), getindex.(ped1_hist,2),
+#     linewidth=0, markershape=:circle, markersize=3, markerstrokewidth=0 ,
+#     label="Planning Points")
 
-plot!(p_path, getindex.(ped1_hist_vrpn,1), getindex.(ped1_hist_vrpn,2).+7,
-    linewidth=1,
-    label="Vicon Output")
+# plot!(p_path, getindex.(ped1_hist_vrpn,1), getindex.(ped1_hist_vrpn,2),
+#     linewidth=1,
+#     label="Vicon Output")
 
 # plot initial state
 V_ci = pose_to_edges(s_hist[1], veh)
