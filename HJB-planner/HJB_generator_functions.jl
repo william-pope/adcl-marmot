@@ -111,7 +111,7 @@ function circle_to_polygon(OC_cir)
     r_c = OC_cir[3]
 
     # number of points used to discretize edge of circle
-    pts = 16
+    pts = 8
 
     # circle radius is used as midpoint radius for polygon faces
     r_p = r_c/cos(pi/pts)
@@ -203,7 +203,6 @@ function initialize_value_array(env::Environment, veh::Vehicle)
     T = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
     O = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
 
-    # NOTE: obstacle cost needs to more higher than initial node cost
     for i in 1:size(env.x_grid,1)
         for j in 1:size(env.y_grid,1)
             for k in 1:size(env.theta_grid,1)
@@ -230,9 +229,6 @@ function initialize_value_array(env::Environment, veh::Vehicle)
             end
         end
     end
-
-    # T_stat = SArray{Tuple{size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)}, Bool}(T)
-    # O_stat = SArray{Tuple{size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)}, Bool}(O)
 
     U = deepcopy(Up)
     I = deepcopy(Ip)
@@ -326,36 +322,6 @@ function solve_HJB_PDE(A, du_tol, max_steps, env::Environment, veh::Vehicle, ani
     # initialize U, Up, I
     U, Up, I, Ip, T, O = initialize_value_array(env, veh)
 
-    # test_ids = [[2, 2, 16],
-    #             [3, 3, 16],
-    #             [4, 4, 16],
-    #             [5, 5, 16],
-    #             [6, 6, 16],
-    #             [7, 7, 16],
-    #             [8, 8, 16]]
-
-    test_ids = [[9, 2, 28],
-                [9, 3, 28],
-                [9, 4, 28],
-                [9, 5, 28],
-                [9, 6, 28],
-                [9, 7, 28],
-                [9, 8, 28]]
-
-    # test_ids = [[2, 2, 16],
-    #             [6, 3, 21],
-    #             [12, 8, 6],
-    #             [5, 5, 16]]
-
-    # U_hist = []
-    # row = []
-    # for id in test_ids
-    #     U_id = U[id[1], id[2], id[3]]
-    #     push!(row, U_id)
-    # end
-    # push!(U_hist, row)
-    # row = []
-
     # main function loop
     du_max = maximum(Up)
     step = 1
@@ -368,7 +334,7 @@ function solve_HJB_PDE(A, du_tol, max_steps, env::Environment, veh::Vehicle, ani
             for j in sweep[2]
                 for k in sweep[3]
                     if T[i,j,k] == false && O[i,j,k] == false
-                        Up[i,j,k], Ip[i,j,k] = update_value(U, I, i, j, k, A, env, veh)
+                        Up[i,j,k], Ip[i,j,k] = update_value(Up, Ip, i, j, k, A, env, veh)
                     end
                 end
             end
@@ -383,13 +349,6 @@ function solve_HJB_PDE(A, du_tol, max_steps, env::Environment, veh::Vehicle, ani
 
         U = deepcopy(Up)
         I = deepcopy(Ip)
-        
-        # for id in test_ids
-        #     U_id = U[id[1], id[2], id[3]]
-        #     push!(row, U_id)
-        # end
-        # push!(U_hist, row)
-        # row = []
 
         # println("step: ", step, ", du_max = ", du_max)
 
@@ -410,48 +369,37 @@ function solve_HJB_PDE(A, du_tol, max_steps, env::Environment, veh::Vehicle, ani
                 k_plot = searchsortedfirst(env.theta_grid, theta_plot) - 1
             end
 
-            p_k = heatmap(env.x_grid, env.y_grid, transpose(U[:,:,k_plot]), clim=(0,100),
+            p_k = heatmap(env.x_grid, env.y_grid, transpose(U[:,:,k_plot]), clim=(0,10),
                         # xlim=(-3.5,5.5),
                         aspect_ratio=:equal, 
-                        size=(1000,1100),
-                        xlabel="x-axis [m]", ylabel="y-axis [m]", 
-                        title="HJB Value Function",
-                        titlefontsize = 20,
+                        size=(750,1000),
+                        # xlabel="x-axis [m]", ylabel="y-axis [m]", 
                         colorbar_title = "time-to-target [s]",
-                        # legend=:topright,
-                        legend=false, colorbar=false,
+                        legend=:topright,
+                        # legend=true, 
+                        colorbar=false,
                         legend_font_pointsize = 11,
                         top_margin = -30*Plots.mm,
                         left_margin = 8*Plots.mm,
-                        bottom_margin = -8*Plots.mm)
+                        bottom_margin = 4*Plots.mm)
 
-            # for i in 1:size(env.x_grid,1)
-            #     for j in 1:size(env.y_grid,1)
-            #         if I[i,j,k_plot] == true
-            #             plot!(p_k, [env.x_grid[i]], [env.y_grid[j]],
-            #                 markershape=:circle, markercolor=:white, markersize=3, 
-            #                 label = "")
-            #         end
-            #     end
-            # end
-            plot!(p_k)
-
-            plot_polygon(p_k, env.W, 2, :black, "Workspace")
-            plot_polygon(p_k, env.T_xy, 2, :green, "Target Set")
+            plot_polygon(p_k, env.W, 3, :black, "Workspace")
+            plot_polygon(p_k, env.T_xy, 3, :green, "Target Set")
+            plot_polygon(p_k, env.O_vec[1], 3, :red, "Obstacle")
             for O in env.O_vec
-                plot_polygon(p_k, O, 2, :red, "")
+                plot_polygon(p_k, O, 3, :red, "")
             end
 
             # plot vehicle figure
-            x_pos = 0
-            y_pos = -70
+            x_pos = 6.75
+            y_pos = 5
 
             x_max = x_pos + sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
             y_min = y_pos - sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
 
             x = [x_pos, y_pos, env.theta_grid[k_plot]]
             
-            E_arr = pose_to_edges(x, unit_car)
+            E_arr = pose_to_edges(x, veh)
             V = [[E_arr[1][1] E_arr[1][2]];
                 [E_arr[2][1] E_arr[2][2]];
                 [E_arr[3][1] E_arr[3][2]];
@@ -459,23 +407,15 @@ function solve_HJB_PDE(A, du_tol, max_steps, env::Environment, veh::Vehicle, ani
                 
             plot!(p_k, [x_max], [y_pos], markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
             plot!(p_k, [x_pos], [y_pos], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
-            plot_polygon(p_k, V, 2, :blue, "Vehicle Orientation")
+            plot_polygon(p_k, V, 2, :blue, "Vehicle")
 
             # plot step count
-            annotate!(x_pos, y_pos+10, text("step:\n$(step-1)", 14))
+            annotate!(x_pos, y_pos+1.5, text("step:\n$(step-1)", 14))
 
             display(p_k)
         end
     end
-    # gif(anim_U, algs_path*"HJB-planner/figures/hjb_growth.gif", fps=6)
-
-    # p_conv = plot(xlabel="step", ylabel="value", title="HJB Value Convergence vs Step")
-    # for i in 1:size(test_ids,1)
-    #     id = test_ids[i]
-    #     println("id: ", id)
-    #     plot!(p_conv, 0:step-1, getindex.(U_hist,i), label="id = $id")
-    # end
-    # display(p_conv)
+    # gif(anim_U, algs_path*"HJB-planner/figures/hjb_growth.gif", fps=3)
 
     return U, T, O
 end

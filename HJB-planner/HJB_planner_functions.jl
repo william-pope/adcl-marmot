@@ -42,66 +42,6 @@ function HJB_planner(x_0, U, dt, plan_steps, A, O, env::Environment, veh::Vehicl
     return x_path, u_path, step
 end
 
-
-# dt = 0.1 vs dt = 1.0, what issues will appear? hitting obstacles? 
-# reactive controller will modify velocity on path, how will this affect path execution and safety?
-
-# ISSUE: front/back chattering is still an issue to be fixed
-#   - action computed from dot product of value gradient and f(x,u)
-#   - gradient of value function computed using center difference method and interpolation
-#   - is issue caused by being near an obstacle? CDM may be sampling points on obstacle
-#       - huge value along axis that lands in obstacle
-#   - theta gradient seems like biggest difference between fordward/backward steps
-#       - may just be this spot
-#   - signs on vdot flip between fordward/backward actions at different steps
-
-#   - change is caused by dV[1]*xdot[1]
-#       - x interp point lands in obstacle
-#       - probably doesn't happen every time an obstacle is touched because numbers balance out
-#       - dV[1] is pretty similar between steps, but small variations in cos(theta) due to theta cause big swing in dV[1]*xdot[1]
-#           - same variations in sin(theta), but multiplied by normal scale dV (problem is still obstacle values)
-
-#   - obstacles should not be included in gradient calculations, since their value is meaningless
-#   - if adjacent point is in obstacle, either:
-#       - leave axis out of dot product (probably not best)
-#       - take single point gradient from noon-obstacle direction
-
-#   - does issue only occur at corners or anytime near an obstacle?
-#       - seems like only at corner
-
-#   - fix will be in interp_value()
-#   - zeroing out affected partial seems to work, but single FDM calc would be more accurate
-
-# ISSUE: new problem in open field, check for bug somewhere
-#   - starts when state clears the corner, no longer DQing any interp nodes on +x side
-#       - although it looks like a node should still be in the obstacle (very close though)
-#       - x partial is positive when should be negative -> hitting obstacle (why not detected?)
-#       - is it rounding up the y value? but obviously hitting obstacle
-#       - (!): issue where orientation allows side of car to overlap corner of obstacle (yes)
-
-# working state:
-# x: [-21.480752122416565, 20.97053490637511, 0.5470138792735877]
-# x_itp: [-20.480752122416565, 20.97053490637511, 0.5470138792735877]
-# [i,j,k]: [31, 71, 23], [x,y,th]: [-20.0, 20.0, 0.6981317007977319]
-# above node in obstacle
-
-# issue state:
-# x: [-21.467849234711082, 20.978183753374577, 0.5232049851451851]
-# x_itp: [-20.467849234711082, 20.978183753374577, 0.5232049851451851]
-# [i,j,k]: [31, 71, 21], [x,y,th]: [-20.0, 20.0, 0.34906585039886595]   val ~= 300
-# [i,j,k]: [31, 71, 22], [x,y,th]: [-20.0, 20.0, 0.5235987755982987]    val ~= 300
-
-# fixed state:
-# x: [-21.467849234711082, 20.978183753374577, 0.5232049851451851]
-# x_itp: [-20.467849234711082, 20.978183753374577, 0.5232049851451851]
-# [i,j,k]: [31, 71, 21], [x,y,th]: [-20.0, 20.0, 0.34906585039886595], U[i,j,k] = 1000.0
-# above node in obstacle
-
-
-# check that gradient working normally once around corner
-#   - looks good to me
-
-
 # NOTE: called directly by POMDP rollout simulator
 #   - need to optimize this function and its children
 
@@ -121,6 +61,8 @@ function HJB_action(x, U, A, O, env::Environment, veh::Vehicle)
         x[2] = env.y_grid[end-2]
     end
 
+    x[3] > pi ? x[3] = x[3] - 2*pi : x[3] = x[3]
+
     # println("\n--- ---\nx: ", x)
     
     # calculate gradient at current state
@@ -128,6 +70,7 @@ function HJB_action(x, U, A, O, env::Environment, veh::Vehicle)
 
     # println("dV: ", dV)
 
+    # ISSUE: when all three axes zeroed, a_opt remains as default ([-0.75, -0.475])
     # calculate optimal action
     vdot_min = Inf
     a_opt = A[1]
@@ -137,32 +80,16 @@ function HJB_action(x, U, A, O, env::Environment, veh::Vehicle)
 
         vdot = dot(dV, xdot)
 
-        # temporary
-        # if i == 1 || i == 4
-            # println("a: ", A[i], ", vdot: ", vdot)
-            # println("dV[1] * xdot[1] = ", dV[1]*xdot[1])
-            # println("dV[2] * xdot[2] = ", dV[2]*xdot[2])
-            # println("dV[3] * xdot[3] = ", dV[3]*xdot[3])
-            # println("")
-        # end
-
         if vdot < vdot_min
             vdot_min = vdot
             a_opt = A[i]
         end
     end
 
-    # println("a_opt: ", a_opt, ", vdot_min: ", vdot_min)
+    # println("x: ", x)
+    # println("a_opt: ", a_opt)
     return a_opt
 end
-
-# TO-DO: make CDM its own function
-    #   - if any interps return obstacle, need to throw out sample point
-    #   - this is only use of value_interp, could combine with CDM if it helps
-
-# NOTE: may want to address bigger question of time step/action set (HJB vs tree search) in determining true value
-#   - may want to choose best action by propagating each forward for Dt
-#   - okay if resulting paths are only optimal as Dt->0
 
 # ISSUE: dealing with obstacles during gradient approximation
 #   - unsure what to do when one of interpolation nodes is in an obstacle
@@ -174,26 +101,77 @@ end
 #       - probably more accurate to switch to single point difference method, but will be a little harder
 
 function value_gradient(x::Vector{Float64}, U::Array{Float64, 3}, O::Array{Bool, 3}, env::Environment)
+    # println(x)
+
+    # ISSUE: chattering still happening near obstacles
+    #   - in this case, think neighbor in x and theta are obstacle states
+    #   - actually negative y is too (doesn't look like it should...)
+    #   - obstacles on all three axes -> frozen
+    #   - single point gradient will fix this
+
+    #   - each axis gradient is independent, can look at each in a for loop
+    #   - logic:
+    #       - if both free, use center difference method with both points
+    #       - if one point in obs, use single diff method with other point and x
+    #       - if both in obs, set du_dy = 0.0
+
+    #   - think issue is due to both outlier point and central point touching obstacle
+    
     # interpolate value at surrounding points
+    v_x, obs_x = value_interp(x, U, O, env)
     v_1p, obs_1p = value_interp(x + [env.h_xy, 0.0, 0.0], U, O, env)
-    v_1n, obs_1n = value_interp(x - [env.h_xy, 0.0, 0.0], U, O, env)    # SPEED: braodcast.jl?
+    v_1n, obs_1n = value_interp(x - [env.h_xy, 0.0, 0.0], U, O, env)
     v_2p, obs_2p = value_interp(x + [0.0, env.h_xy, 0.0], U, O, env)
-    v_2n, obs_2n = value_interp(x - [0.0, env.h_xy, 0.0], U, O, env)    # SPEED: allocation?
+    v_2n, obs_2n = value_interp(x - [0.0, env.h_xy, 0.0], U, O, env)
     v_3p, obs_3p = value_interp(x + [0.0, 0.0, env.h_theta], U, O, env)
     v_3n, obs_3n = value_interp(x - [0.0, 0.0, env.h_theta], U, O, env)
 
-    # NOTE: need to test this for oblique obstacle edges
-    # approximate partial derivatives using centered difference scheme
-    any((obs_1p, obs_1n)) ? du_dx = 0.0 : du_dx = (v_1p - v_1n)/(2*env.h_xy)
-    any((obs_2p, obs_2n)) ? du_dy = 0.0 : du_dy = (v_2p - v_2n)/(2*env.h_xy)
-    any((obs_3p, obs_3n)) ? du_dtheta = 0.0 : du_dtheta = (v_3p - v_3n)/(2*env.h_theta)
+    # ISSUE: interpolation at center point can be in obstacle
+    #   - occurs just after vehicle rounds corner of circle (9 o'clock position)
+    #   - y_neg in obstacle seems strange, since behind vehicle
+    #   - this might just be what happens on a diagonal face
+    #   - happens when making sharp turns around obstacles (need more theta steps?)
+    #   - is step size just too large? seems like we're already at the limit
+
+    # calculating du_dx
+    if obs_1p == false && obs_1n == false
+        du_dx = (v_1p - v_1n)/(2*env.h_xy)
+    elseif obs_1p == true && obs_1n == false
+        du_dx = (v_x - v_1n)/env.h_xy
+    elseif obs_1p == false && obs_1n == true
+        du_dx = (v_1p - v_x)/env.h_xy
+    else
+        du_dx = 0.0
+    end
+
+    # calculating du_dy
+    if obs_2p == false && obs_2n == false
+        du_dy = (v_2p - v_2n)/(2*env.h_xy)
+    elseif obs_2p == true && obs_2n == false
+        du_dy = (v_x - v_2n)/env.h_xy
+    elseif obs_2p == false && obs_2n == true
+        du_dy = (v_2p - v_x)/env.h_xy
+    else
+        du_dy = 0.0
+    end
+
+    # calculating du_dtheta
+    if obs_3p == false && obs_3n == false
+        du_dtheta = (v_3p - v_3n)/(2*env.h_theta)
+    elseif obs_3p == true && obs_3n == false
+        du_dtheta = (v_x - v_3n)/env.h_theta
+    elseif obs_3p == false && obs_3n == true
+        du_dtheta = (v_3p - v_x)/env.h_theta
+    else
+        du_dtheta = 0.0
+    end
 
     dV = [du_dx, du_dy, du_dtheta]
 
+    # println("dV: ", dV)
+
     return dV
 end
-
-# SPEED: value_interp() seems most consequential
 
 # may produce asymmetry due to interpolation index selection
 function value_interp(x::Vector{Float64}, U::Array{Float64, 3}, O::Array{Bool, 3}, env::Environment)
@@ -225,7 +203,6 @@ function value_interp(x::Vector{Float64}, U::Array{Float64, 3}, O::Array{Bool, 3
     end
 
     # finds indices of neighboring grid nodes
-
     #   - made up of the 8 grid points that surround target state
     #   - need to test all 8 points for obstacle collisions
     #   - if any of 8 is in obstacle, whole point gets thrown out
