@@ -55,7 +55,7 @@ OC3 = circle_to_polygon([2.8, 8.0, 0.6])
 O_vec = [OC1, OC2, OC3]
 
 # initialize state grid
-h_xy = 0.1
+h_xy = 0.2
 h_theta = deg2rad(9)
 
 env = Environment(h_xy, 
@@ -75,11 +75,11 @@ println("\nstart --- --- ---")
 algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
 algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 
-algs_path = algs_path_nuc
+algs_path = algs_path_mac
 
 # calculate HJB
 run_HJB = false
-plot_U_HJB = true
+plot_U_HJB = false
 plot_paths = true
 
 if run_HJB == true
@@ -89,27 +89,8 @@ if run_HJB == true
     # @btime solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
     U_HJB, target_mat, obstacle_mat = solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
 
-    N_grid = size(env.x_grid,1)*size(env.y_grid,1)*size(env.theta_grid,1)
+    N_grid = size(env.x_grid,1) * size(env.y_grid,1) * size(env.theta_grid,1)
     println("total grid nodes = ", N_grid)
-
-    # println(U_HJB[6, 12, 5])
-    # println(U_HJB[28, 43, 13])
-    # println(U_HJB[45, 92, 28])
-   
-    # original: 225 steps
-    #   - 7.719296560087587
-    #   - 5.677956746308499
-    #   - 2.05270933919414
-
-    # Gauss-Seidel: 154 steps
-    #   - 7.710956256430729
-    #   - 5.677604833255936
-    #   - 2.052709011880812
-
-    # actual Gauss-Seidel: 50 steps
-    #   - 7.715912440064768
-    #   - 5.681829778931739
-    #   - 2.0529986173047634
 
     @save algs_path*"HJB-planner/bson/U_HJB.bson" U_HJB
     @save algs_path*"HJB-planner/bson/target_mat.bson" target_mat
@@ -122,18 +103,13 @@ else
     @load algs_path*"HJB-planner/bson/obstacle_mat.bson" obstacle_mat
 end
 
-# # generate optimal action for given state
-# x_0 = [15.2, 5.1, 0.51*pi]
-
 # @btime HJB_action(x_0, U_HJB, A, obstacle_mat, env, veh)
 
 # ProfileView.@profview for _ in 1:1000
 #     HJB_action(x_0, U_HJB, A, obstacle_mat, env, veh)
 # end
 
-# # generate optimal path
-# x_0 = [5.0, 0.5, 0.7*pi]
-
+# generate optimal path
 X_0 = [[2.75, 0.5, 0.5*pi]]
 # ,
 #         [4.75, 3.0, deg2rad(105)],
@@ -143,17 +119,8 @@ X_0 = [[2.75, 0.5, 0.5*pi]]
 dt = 0.01
 plan_steps = 1000
 
-# x_path, u_path, step = HJB_planner(x_0, U_HJB, dt, plan_steps, A, obstacle_mat, env, veh)
-# # ProfileView.@profview HJB_planner(x_0, U_HJB, dt, plan_steps, A, obstacle_mat, env, veh)
-
 # path_time = step*dt
 # println("path execution time: ", path_time, " sec")
-
-
-# planner profiling
-#   - initial btime for full planner: 159.059 ms (1,549,500 allocations)
-#   - btime for HJB_action: 102.607 μs (273 allocations)
-#   - need to reduce allocations
 
 
 # 4) PLOTS --- --- ---
@@ -164,7 +131,7 @@ if plot_U_HJB == true
         p_k = heatmap(env.x_grid, env.y_grid, 
                     transpose(U_HJB[:,:,k_plot]), clim=(0,10),
                     aspect_ratio=:equal, 
-                    size=(600,1000),
+                    size=(800,800),
                     # xlabel="x-axis [m]", ylabel="y-axis [m]", 
                     # title="HJB Value Function",
                     titlefontsize = 20,
@@ -179,11 +146,13 @@ if plot_U_HJB == true
 
         # p_k = plot(aspect_ratio=:equal, 
         #             size=(750,1000),
+        #             xlim=(3.2, 5.2),
+        #             ylim=(0, 2.5),
         #             # xlabel="x-axis [m]", ylabel="y-axis [m]", 
         #             # title="HJB Value Function",
         #             titlefontsize = 20,
-        #             legend=:topright,
-        #             # legend=false, 
+        #             # legend=:topright,
+        #             legend=false, 
         #             legend_font_pointsize = 11,
         #             top_margin = -30*Plots.mm,
         #             left_margin = 8*Plots.mm,
@@ -195,7 +164,7 @@ if plot_U_HJB == true
         #         y_j = env.y_grid[j]
 
         #         plot!(p_k, [x_i], [y_j],
-        #             markershape=:circle, markersize=2, markercolor=:black,
+        #             markershape=:circle, markersize=4, markercolor=:black,
         #             label="")
         #     end
         # end
@@ -208,8 +177,8 @@ if plot_U_HJB == true
         end
 
         # # vehicle figure
-        # x_pos = 6.75
-        # y_pos = 5
+        # x_pos = 4.08
+        # y_pos = 1.07
 
         # x_max = x_pos + sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
         # y_min = y_pos - sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
@@ -222,8 +191,22 @@ if plot_U_HJB == true
         #     [V_c[3][1] V_c[3][2]];
         #     [V_c[4][1] V_c[4][2]]]
             
-        # plot!(p_k, [x_max], [y_pos], markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
-        # plot!(p_k, [x_pos], [y_pos], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
+        # plot!(p_k, [x_pos], [y_pos], 
+        #     markercolor=:blue, markershape=:circle, markersize=10, markerstrokewidth=0, label="")
+
+        # plot!(p_k, [x_pos+env.h_xy], [y_pos], 
+        #     markercolor=:green, markershape=:circle, markersize=7, markerstrokewidth=0, label="") 
+        # plot!(p_k, [x_pos-env.h_xy], [y_pos], 
+        #     markercolor=:green, markershape=:circle, markersize=7, markerstrokewidth=0, label="")
+        # plot!(p_k, [x_pos], [y_pos+env.h_xy], 
+        #     markercolor=:green, markershape=:circle, markersize=7, markerstrokewidth=0, label="")
+        # plot!(p_k, [x_pos], [y_pos-env.h_xy], 
+        #     markercolor=:green, markershape=:circle, markersize=7, markerstrokewidth=0, label="")
+
+        # plot!(p_k, [x_pos, x_pos+env.h_xy], [y_pos, y_pos], linecolor=:green, linestyle=:dash)
+        # plot!(p_k, [x_pos, x_pos-env.h_xy], [y_pos, y_pos], linecolor=:green, linestyle=:dash)
+        # plot!(p_k, [x_pos, x_pos], [y_pos, y_pos+env.h_xy], linecolor=:green, linestyle=:dash)
+        # plot!(p_k, [x_pos, x_pos], [y_pos, y_pos-env.h_xy], linecolor=:green, linestyle=:dash)
         # plot_polygon(p_k, V, 2, :blue, "Vehicle")
 
         # theta_deg = round(rad2deg(x[3]), digits=1)
@@ -291,7 +274,8 @@ if plot_paths == true
 
     for x_0 in X_0
         # generate optimal path
-        x_path, u_path, step = HJB_planner(x_0, U_HJB, dt, plan_steps, A, obstacle_mat, env, veh)
+        x_path, u_path, step = HJB_planner(x_0, U_HJB, dt, plan_steps, A, obstacle_mat, car_EoM, env, veh)
+        # display(u_path)
 
         path_time = step*dt
         println("path execution time: ", path_time, " sec")

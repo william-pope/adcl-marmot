@@ -11,8 +11,13 @@ include("HJB_generator_functions.jl")
 #           - value_gradient()
 #               - value_interp()
 
+# planner hierarchy (alternate)
+#   - HJB_planner()
+#       - HJB_action()
+#           - value_interp()
+
 # NOTE: not actually used in operation
-function HJB_planner(x_0, U, dt, plan_steps, A, O, env::Environment, veh::Vehicle)
+function HJB_planner(x_0, U, dt, plan_steps, A, O, EoM::Function, env::Environment, veh::Vehicle)
     if typeof(x_0) != Vector{Float64}
         x_0 = convert(Vector{Float64}, x_0)
     end
@@ -27,11 +32,11 @@ function HJB_planner(x_0, U, dt, plan_steps, A, O, env::Environment, veh::Vehicl
         step += 1
 
         # calculate optimal action
-        u_k = HJB_action(x_k, U, A, O, env, veh)  # SPEED: focus is here
+        u_k = HJB_action(x_k, U, A, O, dt, EoM, env, veh)  # SPEED: focus is here
         push!(u_path, u_k)
 
         # simulate forward one time step
-        x_k1 = runge_kutta_4(x_k, u_k, dt, car_EoM, veh)    # needs K_sub
+        x_k1 = runge_kutta_4(x_k, u_k, dt, EoM, veh)    # needs K_sub
         push!(x_path, x_k1)
 
         x_k = deepcopy(x_k1)
@@ -42,52 +47,76 @@ function HJB_planner(x_0, U, dt, plan_steps, A, O, env::Environment, veh::Vehicl
     return x_path, u_path, step
 end
 
-# NOTE: called directly by POMDP rollout simulator
-#   - need to optimize this function and its children
-
 # calculates optimal action as a function of state
-function HJB_action(x, U, A, O, env::Environment, veh::Vehicle)
+function HJB_action(x_k, U, A, O, dt, EoM::Function, env::Environment, veh::Vehicle)
     # TO-DO: make sure this isn't causing any issues, conflicts with other boundary mechanisms
     # adjust position when near edge for boundary issues
-    if abs(x[1] - env.x_grid[1]) < 2*env.h_xy
-        x[1] = env.x_grid[3]
-    elseif abs(x[1] - env.x_grid[end]) < 2*env.h_xy
-        x[1] = env.x_grid[end-2]
+    if abs(x_k[1] - env.x_grid[1]) < 2*env.h_xy
+        x_k[1] = env.x_grid[3]
+    elseif abs(x_k[1] - env.x_grid[end]) < 2*env.h_xy
+        x_k[1] = env.x_grid[end-2]
     end
 
-    if abs(x[2] - env.y_grid[1]) < 2*env.h_xy
-        x[2] = env.y_grid[3]
-    elseif abs(x[2] - env.y_grid[end]) < 2*env.h_xy
-        x[2] = env.y_grid[end-2]
+    if abs(x_k[2] - env.y_grid[1]) < 2*env.h_xy
+        x_k[2] = env.y_grid[3]
+    elseif abs(x_k[2] - env.y_grid[end]) < 2*env.h_xy
+        x_k[2] = env.y_grid[end-2]
     end
 
-    x[3] > pi ? x[3] = x[3] - 2*pi : x[3] = x[3]
+    x_k[3] > pi ? x_k[3] = x_k[3] - 2*pi : x_k[3] = x_k[3]
 
-    # println("\n--- ---\nx: ", x)
+    println("\n--- ---\nx_k: ", x_k)
     
-    # calculate gradient at current state
-    dV = value_gradient(x, U, O, env)       # SPEED: big focus
+    # # calculate gradient at current state
+    # dV = value_gradient(x_k, U, O, env)       # SPEED: big focus
 
-    # println("dV: ", dV)
+    # vdot_min = Inf
+    # a_opt = A[1]
+    # for i in 1:size(A,1)
+    #     xs = SVector{3, Float64}(x_k)     # TO-DO: clean up variable types
+    #     xdot = car_EoM(xs, A[i], veh)
 
-    # ISSUE: when all three axes zeroed, a_opt remains as default ([-0.75, -0.475])
-    # calculate optimal action
-    vdot_min = Inf
+    #     vdot = dot(dV, xdot)
+
+    #     if vdot < vdot_min
+    #         vdot_min = vdot
+    #         a_opt = A[i]
+    #     end
+    # end
+
+    # ISSUE: one-step planner might have same issues with value interpolation
+    #   - possible that all 'forward' actions pick up a grid node within the obstacle
+    #   - due to small time steps, all x_k1 points probably in same grid cell
+
+    #   - also they're all returning v_k1=0 lol...
+    #       - this was added to deal with obstacles, obviously need smarter approach
+    #       - need to consider obs_k1
+    #           - still going to break at certain states (when all obs/when fwd obs)
+
+    # new idea: add a small boundary around each obstacle, use same value function
+    # - vehicle cannot choose actions that cross the boundary
+    # - vehicle can use value points behind boundary to inform gradient/tree for other actions
+    # - objective: can never get close enough to obstacle to break value interpolation
+
+    # new idea: use value extrapolation from nearby grids that are obstacle free
+
+    # calculate one-step tree search at current state
+    v_k1_min = Inf
     a_opt = A[1]
     for i in 1:size(A,1)
-        xs = SVector{3, Float64}(x)     # TO-DO: clean up variable types
-        xdot = car_EoM(xs, A[i], veh)
+        x_k1 = runge_kutta_4(x_k, A[i], dt, EoM, veh)
+        v_k1, obs_k1 = value_interp(x_k1, U, O, env)
 
-        vdot = dot(dV, xdot)
+        println("a_k: ", A[i], ", x_k1: ", x_k1, ", v_k1: ", v_k1, ", obs_k1: ", obs_k1)
 
-        if vdot < vdot_min
-            vdot_min = vdot
+        if v_k1 < v_k1_min && obs_k1 == false
+            v_k1_min = v_k1
             a_opt = A[i]
         end
     end
 
-    # println("x: ", x)
-    # println("a_opt: ", a_opt)
+    # println("x_k: ", x_k)
+    println("a_opt: ", a_opt)
     return a_opt
 end
 
