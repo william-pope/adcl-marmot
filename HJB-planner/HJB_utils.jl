@@ -2,28 +2,7 @@
 
 using StaticArrays
 
-# define discretized grid struct
-struct Environment
-    h_xy::Float64
-    h_theta::Float64
-    x_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-    y_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-    theta_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-    W::Matrix{Float64}
-    T_xy::Matrix{Float64}
-    T_theta::Vector{Vector{Float64}}
-    O_vec::Vector{Matrix{Float64}}
-end
-
-struct Vehicle
-    c_vf::Float64   # max forward speed [m/s]
-    c_vb::Float64   # max backward speed [m/s]
-    c_phi::Float64  # max steering angle [rad]
-    wb::Float64     # wheelbase [m]
-    l::Float64      # length [m]
-    w::Float64      # width [m]
-    b2a::Float64    # rear bumber to rear axle [m]
-end
+include("dynamics_models.jl")
 
 # 4th-order Runge-Kutta integration scheme
 function runge_kutta_4(x_k::Vector{Float64}, u::Vector{Float64}, dt, EoM::Function, veh::Vehicle)
@@ -185,20 +164,20 @@ end
 function pose_to_edges(x, veh::Vehicle)
     # define standard points
     # SPEED: allocation, should be able to define as StaticArray
-    E_std = [[-veh.b2a, 1/2*veh.w],         # top left
-            [-veh.b2a, -1/2*veh.w],         # bottom left
-            [-veh.b2a+veh.l, -1/2*veh.w],   # bottom right
-            [-veh.b2a+veh.l, 1/2*veh.w],    # top right
-            [-veh.b2a, 1/6*veh.w],              # left edge refinement              
-            [-veh.b2a, -1/6*veh.w],
-            [-veh.b2a+1/4*veh.l, -1/2*veh.w],   # bottom edge refinement
-            [-veh.b2a+1/2*veh.l, -1/2*veh.w],
-            [-veh.b2a+3/4*veh.l, -1/2*veh.w],
-            [-veh.b2a+veh.l, 1/6*veh.w],        # right edge refinement
-            [-veh.b2a+veh.l, -1/6*veh.w],
-            [-veh.b2a+1/4*veh.l, 1/2*veh.w],    # top edge refinement
-            [-veh.b2a+1/2*veh.l, 1/2*veh.w],
-            [-veh.b2a+3/4*veh.l, 1/2*veh.w]]
+    E_std = [[-veh.ext2axle, 1/2*veh.ext_w],         # top left
+            [-veh.ext2axle, -1/2*veh.ext_w],         # bottom left
+            [-veh.ext2axle+veh.ext_l, -1/2*veh.ext_w],   # bottom right
+            [-veh.ext2axle+veh.ext_l, 1/2*veh.ext_w],    # top right
+            [-veh.ext2axle, 1/6*veh.ext_w],              # left edge refinement              
+            [-veh.ext2axle, -1/6*veh.ext_w],
+            [-veh.ext2axle+1/4*veh.ext_l, -1/2*veh.ext_w],   # bottom edge refinement
+            [-veh.ext2axle+1/2*veh.ext_l, -1/2*veh.ext_w],
+            [-veh.ext2axle+3/4*veh.ext_l, -1/2*veh.ext_w],
+            [-veh.ext2axle+veh.ext_l, 1/6*veh.ext_w],        # right edge refinement
+            [-veh.ext2axle+veh.ext_l, -1/6*veh.ext_w],
+            [-veh.ext2axle+1/4*veh.ext_l, 1/2*veh.ext_w],    # top edge refinement
+            [-veh.ext2axle+1/2*veh.ext_l, 1/2*veh.ext_w],
+            [-veh.ext2axle+3/4*veh.ext_l, 1/2*veh.ext_w]]
 
     # calculate points for current pose
     E_rt = [Vector{Float64}(undef, 2) for _ = 1:size(E_std,1)]  # SPEED: allocation, might be fixed by SA above

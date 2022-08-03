@@ -44,7 +44,11 @@ function solve_HJB_PDE(actions, dval_tol, max_steps, env::Environment, veh::Vehi
             for j in sweep[2]
                 for k in sweep[3]
                     if target_array[i,j,k] == false && obstacle_array[i,j,k] == false
-                        value_array[i,j,k], init_array[i,j,k] = update_node_value(value_array, init_array, i, j, k, actions, env, veh, EoM)
+                        # # finite difference method
+                        # value_array[i,j,k], init_array[i,j,k] = update_node_value_FDM(value_array, init_array, i, j, k, actions, env, veh, EoM)
+                        
+                        # semi-Lagrangian method
+                        value_array[i,j,k] = update_node_value_SL(value_array, i, j, k, actions, env, veh, EoM)
                     end
                 end
             end
@@ -94,17 +98,17 @@ function solve_HJB_PDE(actions, dval_tol, max_steps, env::Environment, veh::Vehi
 
             plot_polygon(p_k, env.W, 3, :black, "Workspace")
             plot_polygon(p_k, env.T_xy, 3, :green, "Target Set")
-            plot_polygon(p_k, env.obstacle_array_vec[1], 3, :red, "Obstacle")
-            for obstacle_array in env.obstacle_array_vec
-                plot_polygon(p_k, obstacle_array, 3, :red, "")
+            plot_polygon(p_k, env.O_vec[1], 3, :red, "Obstacle")
+            for O_vec in env.O_vec
+                plot_polygon(p_k, O_vec, 3, :red, "")
             end
 
             # plot vehicle figure
-            x_pos = 6.75
-            y_pos = 5
+            x_pos = 8.0
+            y_pos = 4.5
 
-            x_max = x_pos + sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
-            y_min = y_pos - sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
+            x_max = x_pos + sqrt((veh.axle_l-veh.ext2axle)^2 + (veh.ext_w/2)^2)
+            y_min = y_pos - sqrt((veh.axle_l-veh.ext2axle)^2 + (veh.ext_w/2)^2)
 
             x = [x_pos, y_pos, env.theta_grid[k_plot]]
             
@@ -174,7 +178,7 @@ end
 
 # @code_warntype
 
-function update_node_value(value_array, init_array, i::Int, j::Int, k::Int, actions, env::Environment, veh::Vehicle, EoM::Function)   
+function update_node_value_FDM(value_array, init_array, i::Int, j::Int, k::Int, actions, env::Environment, veh::Vehicle, EoM::Function)   
     x1 = env.x_grid[i]
     x2 = env.y_grid[j]
     x3 = env.theta_grid[k]
@@ -182,12 +186,12 @@ function update_node_value(value_array, init_array, i::Int, j::Int, k::Int, acti
     x = SVector{3, Float64}(x1, x2, x3)
 
     # compute val_ijk update
-    value_array_min = Inf
+    val_ijk_min = Inf
     init_ijk = false
 
     # code in this loop gets iterated the most
-    for ia in eachindex(actions)
-        xdot = EoM(x, actions[ia], veh)
+    for u in actions
+        xdot = EoM(x, u, veh)
     
         # calculate upwind indices
         i_uw = i + Int(sign(xdot[1]))
@@ -204,10 +208,10 @@ function update_node_value(value_array, init_array, i::Int, j::Int, k::Int, acti
             val_k_uw = value_array[i, j, k_uw]
 
             # calculate value for given action
-            val_a_ijk = finite_diff_eqn(xdot, val_i_uw, val_j_uw, val_k_uw, env)
+            val_ijk_u = finite_diff_eqn(xdot, val_i_uw, val_j_uw, val_k_uw, env)
 
-            if val_a_ijk < value_array_min
-                value_array_min = val_a_ijk
+            if val_ijk_u < val_ijk_min
+                val_ijk_min = val_ijk_u
             end
 
             init_ijk = true
@@ -215,12 +219,12 @@ function update_node_value(value_array, init_array, i::Int, j::Int, k::Int, acti
     end
 
     if init_ijk == true
-        value_array_ijk = value_array_min
+        val_ijk = val_ijk_min
     else
-        value_array_ijk = value_array[i,j,k]
+        val_ijk = value_array[i,j,k]
     end
 
-    return value_array_ijk, init_ijk
+    return val_ijk, init_ijk
 end
 
 function finite_diff_eqn(xdot::SVector{3, Float64}, val_i_uw::Float64, val_j_uw::Float64, val_k_uw::Float64, env::Environment)
@@ -234,4 +238,83 @@ function finite_diff_eqn(xdot::SVector{3, Float64}, val_i_uw::Float64, val_j_uw:
     val_ijk = num/den
 
     return val_ijk
+end
+
+# NOTE: may need to make changes to init_array process
+function update_node_value_SL(value_array, i::Int, j::Int, k::Int, actions, env::Environment, veh::Vehicle, EoM::Function)
+    rho = veh.axle_l/tan(veh.u_phi_max)
+    
+    dt = 0.1    # needs to be function of grid size and vehicle speed
+
+    x_ijk = [env.x_grid[i], env.y_grid[j], env.theta_grid[k]]
+
+    val_p_min = Inf
+    for u in actions
+        xp = runge_kutta_4(x_ijk, u, dt, EoM, veh)
+        val_p = value_interp_SL(xp, value_array, env)
+
+        if val_p < val_p_min
+            val_p_min = val_p
+        end
+    end
+
+    val_ijk = dt + val_p_min
+
+    return val_ijk
+end
+
+# TO-DO: ignoring obstacle issues for now, will need to address
+#   - may need to keep track of RIC (kinda like H-J reachability stuff...)
+function value_interp_SL(x::Vector{Float64}, value_array::Array{Float64, 3}, env::Environment)
+    x_itp = deepcopy(x)
+
+    # adjust theta within bounds
+    if x_itp[3] > pi
+        x_itp[3] -= 2*pi
+    elseif x_itp[3] < -pi
+        x_itp[3] += 2*pi
+    end
+
+    # get box node indices
+    i_0 = find_idx(x_itp[1], env.x_grid)
+    j_0 = find_idx(x_itp[2], env.y_grid)
+    k_0 = find_idx(x_itp[3], env.theta_grid)
+
+    i_1 = i_0 + 1
+    j_1 = j_0 + 1
+    k_0 == size(env.theta_grid,1) ? k_1 = 1 : k_1 = k_0 + 1
+
+    # get box node states
+    x_0 = env.x_grid[i_0]
+    y_0 = env.y_grid[j_0]
+    theta_0 = env.theta_grid[k_0]
+
+    x_1 = env.x_grid[i_1]   
+    y_1 = env.y_grid[j_1]
+    theta_1 = env.theta_grid[k_1]
+
+    x_d = (x_itp[1] - x_0)/(x_1 - x_0)
+    y_d = (x_itp[2] - y_0)/(y_1 - y_0)
+    theta_d = (x_itp[3] - theta_0)/(theta_1 - theta_0)
+
+    val_000 = value_array[i_0, j_0, k_0]
+    val_100 = value_array[i_1, j_0, k_0]
+    val_010 = value_array[i_0, j_1, k_0]
+    val_110 = value_array[i_1, j_1, k_0]
+    val_001 = value_array[i_0, j_0, k_1]
+    val_101 = value_array[i_1, j_0, k_1]
+    val_011 = value_array[i_0, j_1, k_1]
+    val_111 = value_array[i_1, j_1, k_1]
+
+    val_00 = val_000*(1 - x_d) + val_100*x_d
+    val_01 = val_001*(1 - x_d) + val_101*x_d
+    val_10 = val_010*(1 - x_d) + val_110*x_d
+    val_11 = val_011*(1 - x_d) + val_111*x_d
+
+    val_0 = val_00*(1 - y_d) + val_10*y_d
+    val_1 = val_01*(1 - y_d) + val_11*y_d
+
+    val_itp = val_0*(1 - theta_d) + val_1*theta_d
+
+    return val_itp
 end

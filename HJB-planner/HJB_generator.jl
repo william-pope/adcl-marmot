@@ -7,6 +7,8 @@ using ProfileView
 
 include("HJB_generator_functions.jl")
 include("HJB_planner_functions.jl")
+include("HJB_utils.jl")
+include("dynamics_models.jl")
 
 # 2) PARAMETERS --- --- ---
 
@@ -17,14 +19,19 @@ veh = marmot
 
 EoM = dubins_car_EoM
 
-actions = [[a_v,a_phi] for a_v in [-veh.c_vb, veh.c_vf], a_phi in [-veh.c_phi, 0.0, veh.c_phi]]
+# # Reeds-Shepp car
+# actions = [[a_v,a_phi] for a_v in [-veh.u_vb_max, veh.u_vf_max], a_phi in [-veh.u_phi_max, 0.0, veh.u_phi_max]]
+
+# Dubins car
+actions = [[a_v,a_phi] for a_v in [veh.u_vf_max], a_phi in [-veh.u_phi_max, 0.0, veh.u_phi_max]]
+
 actions = reshape(actions, (length(actions),1))
 sort!(actions, dims=1)
 
 # define workspace
 W = [[0.0 0.0];
-    [5.518 0.0];
-    [5.518 11.036];
+    [7.518 0.0];
+    [7.518 11.036];
     [0.0 11.036]]
 
 # W = [[0.0 0.0];
@@ -33,10 +40,10 @@ W = [[0.0 0.0];
 #     [0.0 100.0]]
 
 # define target set
-T_xy = [[2.35 10.2];
-        [3.15 10.2];
-        [3.15 11.0];
-        [2.35 11.0]]
+T_xy = [[3.15 9.8];
+        [4.35 9.8];
+        [4.35 11.0];
+        [3.15 11.0]]
 
 # T_xy = [[95.0 83.0];
 #         [100.0 83.0];
@@ -47,18 +54,18 @@ T_theta = [[-pi, pi]]
 
 # define obstacles
 # - circular obstacles defined as [x, y, r], converted to polygon overapproximation
-OC1 = circle_to_polygon([1.5, 3.0, 0.6])
-OC2 = circle_to_polygon([4.0, 5.0, 0.6])
-OC3 = circle_to_polygon([2.8, 8.0, 0.6])
+OC1 = circle_to_polygon([2.5, 3.0, 0.6])
+OC2 = circle_to_polygon([5.0, 5.0, 0.6])
+OC3 = circle_to_polygon([3.8, 8.0, 0.6])
 
 # OC1 = circle_to_polygon([65.0, 35.0, 20.0])
 # OC2 = circle_to_polygon([35.0, 70.0, 10.0])
 
-# O_vec = [OC1, OC2, OC3]
-O_vec = []
+O_vec = [OC1, OC2, OC3]
+# O_vec = []
 
 # initialize state grid
-h_xy = 0.25
+h_xy = 0.2
 h_theta = deg2rad(10)
 
 env = Environment(h_xy, 
@@ -88,7 +95,7 @@ plot_paths = false
 if run_HJB == true
     du_tol = 0.01
     max_steps = 5000
-    anim_bool = false
+    anim_bool = true
     # @btime solve_HJB_PDE(A, du_tol, max_steps, env, veh, anim_bool)
     value_array, target_array, obstacle_array = solve_HJB_PDE(actions, du_tol, max_steps, env, veh, EoM, anim_bool)
 
@@ -175,17 +182,17 @@ if plot_value_array == true
 
         plot_polygon(p_k, env.W, 3, :black, "Workspace")
         plot_polygon(p_k, env.T_xy, 3, :green, "Target Set")
-        # plot_polygon(p_k, env.O_vec[1], 3, :red, "Obstacle")
-        # for O in env.O_vec
-        #     plot_polygon(p_k, O, 3, :red, "")
-        # end
+        plot_polygon(p_k, env.O_vec[1], 3, :red, "Obstacle")
+        for O in env.O_vec
+            plot_polygon(p_k, O, 3, :red, "")
+        end
 
         # vehicle figure
-        x_pos = 7.0
+        x_pos = 9.0
         y_pos = 4.5
 
-        x_max = x_pos + sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
-        y_min = y_pos - sqrt((veh.l-veh.b2a)^2 + (veh.w/2)^2)
+        x_max = x_pos + sqrt((veh.ext_l-veh.ext2axle)^2 + (veh.ext_w/2)^2)
+        y_min = y_pos - sqrt((veh.ext_l-veh.ext2axle)^2 + (veh.ext_w/2)^2)
 
         x = [x_pos, y_pos, env.theta_grid[k_plot]]
         
@@ -196,7 +203,7 @@ if plot_value_array == true
             [V_c[4][1] V_c[4][2]]]
             
         plot!(p_k, [x_pos], [y_pos], 
-            markercolor=:blue, markershape=:circle, markersize=10, markerstrokewidth=0, label="")
+            markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
 
         plot_polygon(p_k, V, 2, :blue, "Vehicle")
 
