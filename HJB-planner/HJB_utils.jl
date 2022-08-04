@@ -192,9 +192,137 @@ function pose_to_edges(x, veh::Vehicle)
     return E_rt
 end
 
+function find_idx(val, array)
+    if val in array
+        idx = indexin(val, array)[1]    # SPEED: allocation (think it creates an array sometimes -> bad)
+                                        #   - 101.8 μs when array, 8.7 μs when no array (in practice will never exactly be on grid node)
+    else
+        idx = searchsortedfirst(array, val) - 1
+    end
+
+    return idx
+end
+
 function plot_polygon(my_plot, P, lw, lc, ll)
     P_x_pts = [P[:,1]; P[1,1]]
     P_y_pts = [P[:,2]; P[1,2]]
 
     plot!(my_plot, P_x_pts, P_y_pts, linewidth=lw, linecolor=lc, label=ll)
 end
+
+# # TO-DO: make sure this isn't causing any issues, conflicts with other boundary mechanisms
+#     # adjust position when near edge for boundary issues
+#     if abs(x_k[1] - env.x_grid[1]) < 2*env.h_xy
+#         x_k[1] = env.x_grid[3]
+#     elseif abs(x_k[1] - env.x_grid[end]) < 2*env.h_xy
+#         x_k[1] = env.x_grid[end-2]
+#     end
+
+#     if abs(x_k[2] - env.y_grid[1]) < 2*env.h_xy
+#         x_k[2] = env.y_grid[3]
+#     elseif abs(x_k[2] - env.y_grid[end]) < 2*env.h_xy
+#         x_k[2] = env.y_grid[end-2]
+#     end
+
+#     x_k[3] > pi ? x_k[3] = x_k[3] - 2*pi : x_k[3] = x_k[3]
+
+#     println("\n--- ---\nx_k: ", x_k)
+
+# # ISSUE: dealing with obstacles during gradient approximation
+# #   - unsure what to do when one of interpolation nodes is in an obstacle
+# #   - depending on grid size, interp node could be somewhat far away from actual point of interest
+# #   - need to somehow calculate a gradient without using affected nodes
+# #   - gradient process is only a function of the state, not related to actions being tested
+# #   - obstacles are not a part of the flow field, treat like blank regions
+# #   - partials can be set to 0 if needed, just implies a flat gradient along that axis
+# #       - probably more accurate to switch to single point difference method, but will be a little harder
+
+# function value_gradient(x::Vector{Float64}, U::Array{Float64, 3}, O::Array{Bool, 3}, env::Environment)
+#     # println(x)
+
+#     # ISSUE: chattering still happening near obstacles
+#     #   - in this case, think neighbor in x and theta are obstacle states
+#     #   - actually negative y is too (doesn't look like it should...)
+#     #   - obstacles on all three axes -> frozen
+#     #   - single point gradient will fix this
+
+#     #   - each axis gradient is independent, can look at each in a for loop
+#     #   - logic:
+#     #       - if both free, use center difference method with both points
+#     #       - if one point in obs, use single diff method with other point and x
+#     #       - if both in obs, set du_dy = 0.0
+
+#     #   - think issue is due to both outlier point and central point touching obstacle
+    
+#     # interpolate value at surrounding points
+#     v_x, obs_x = value_interp(x, U, O, env)
+#     v_1p, obs_1p = value_interp(x + [env.h_xy, 0.0, 0.0], U, O, env)
+#     v_1n, obs_1n = value_interp(x - [env.h_xy, 0.0, 0.0], U, O, env)
+#     v_2p, obs_2p = value_interp(x + [0.0, env.h_xy, 0.0], U, O, env)
+#     v_2n, obs_2n = value_interp(x - [0.0, env.h_xy, 0.0], U, O, env)
+#     v_3p, obs_3p = value_interp(x + [0.0, 0.0, env.h_theta], U, O, env)
+#     v_3n, obs_3n = value_interp(x - [0.0, 0.0, env.h_theta], U, O, env)
+
+#     # ISSUE: interpolation at center point can be in obstacle
+#     #   - occurs just after vehicle rounds corner of circle (9 o'clock position)
+#     #   - y_neg in obstacle seems strange, since behind vehicle
+#     #   - this might just be what happens on a diagonal face
+#     #   - happens when making sharp turns around obstacles (need more theta steps?)
+#     #   - is step size just too large? seems like we're already at the limit
+
+#     # calculating du_dx
+#     if obs_1p == false && obs_1n == false
+#         du_dx = (v_1p - v_1n)/(2*env.h_xy)
+#     elseif obs_1p == true && obs_1n == false
+#         du_dx = (v_x - v_1n)/env.h_xy
+#     elseif obs_1p == false && obs_1n == true
+#         du_dx = (v_1p - v_x)/env.h_xy
+#     else
+#         du_dx = 0.0
+#     end
+
+#     # calculating du_dy
+#     if obs_2p == false && obs_2n == false
+#         du_dy = (v_2p - v_2n)/(2*env.h_xy)
+#     elseif obs_2p == true && obs_2n == false
+#         du_dy = (v_x - v_2n)/env.h_xy
+#     elseif obs_2p == false && obs_2n == true
+#         du_dy = (v_2p - v_x)/env.h_xy
+#     else
+#         du_dy = 0.0
+#     end
+
+#     # calculating du_dtheta
+#     if obs_3p == false && obs_3n == false
+#         du_dtheta = (v_3p - v_3n)/(2*env.h_theta)
+#     elseif obs_3p == true && obs_3n == false
+#         du_dtheta = (v_x - v_3n)/env.h_theta
+#     elseif obs_3p == false && obs_3n == true
+#         du_dtheta = (v_3p - v_x)/env.h_theta
+#     else
+#         du_dtheta = 0.0
+#     end
+
+#     dV = [du_dx, du_dy, du_dtheta]
+
+#     # println("dV: ", dV)
+
+#     return dV
+# end
+
+#     # # calculate gradient at current state
+#     # dV = value_gradient(x_k, U, O, env)       # SPEED: big focus
+
+#     # vdot_min = Inf
+#     # a_opt = A[1]
+#     # for i in 1:size(A,1)
+#     #     xs = SVector{3, Float64}(x_k)     # TO-DO: clean up variable types
+#     #     xdot = car_EoM(xs, A[i], veh)
+
+#     #     vdot = dot(dV, xdot)
+
+#     #     if vdot < vdot_min
+#     #         vdot_min = vdot
+#     #         a_opt = A[i]
+#     #     end
+#     # end
