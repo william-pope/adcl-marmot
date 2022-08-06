@@ -18,6 +18,7 @@ function runge_kutta_4(x_k::Vector{Float64}, u::Vector{Float64}, dt, EoM::Functi
     # convert x_k1 back
     x_k1 = [x_k1s[1], x_k1s[2], x_k1s[3]]   # TO-DO: clean up variable types
 
+    # NOTE: only robust to angles within 2*pi of desired range
     # adjust theta within bounds
     if x_k1[3] > pi
         x_k1[3] -= 2*pi
@@ -29,13 +30,13 @@ function runge_kutta_4(x_k::Vector{Float64}, u::Vector{Float64}, dt, EoM::Functi
 end
 
 # target set checker
-function in_target_set(y, env::Environment, veh::Vehicle)
+function in_target_set(x, env::Environment, veh::Vehicle)
     # check position of corners
-    C = pose_to_edges(y, veh)
-    rows = [collect(1:size(env.T_xy, 1)); 1]    # SPEED: allocation
+    C = pose_to_edges(x, veh)
+    rows = [collect(1:size(env.T_xy,1)); 1]    # SPEED: allocation, think collect() is the offender
 
     for c in C
-        for i in 1:size(env.T_xy, 1)
+        for i in 1:size(env.T_xy,1)
             i1 = rows[i]
             i2 = rows[i+1]
 
@@ -54,8 +55,8 @@ function in_target_set(y, env::Environment, veh::Vehicle)
 
     # check orientation
     in_theta = zeros(Bool, size(env.T_theta, 1))
-    for i in 1:size(env.T_theta, 1)
-        if y[3] >= minimum(env.T_theta[i]) && y[3] <= maximum(env.T_theta[i])
+    for i in eachindex(env.T_theta)
+        if x[3] >= minimum(env.T_theta[i]) && x[3] <= maximum(env.T_theta[i])
             in_theta[i] = 1
         end
     end
@@ -67,8 +68,8 @@ function in_target_set(y, env::Environment, veh::Vehicle)
 end
 
 # obstacle set checker
-function in_obstacle_set(y, env::Environment, veh::Vehicle)
-    E = pose_to_edges(y, veh::Vehicle)
+function in_obstacle_set(x, env::Environment, veh::Vehicle)
+    E = pose_to_edges(x, veh::Vehicle)
 
     # add more points "c" along sides of vehicle
     for e in E 
@@ -107,7 +108,7 @@ function circle_to_polygon(OC_cir)
     r_c = OC_cir[3]
 
     # number of points used to discretize edge of circle
-    pts = 8
+    pts = 16
 
     # circle radius is used as midpoint radius for polygon faces
     r_p = r_c/cos(pi/pts)
@@ -126,8 +127,8 @@ function circle_to_polygon(OC_cir)
 end
 
 # workspace checker
-function in_workspace(y, env::Environment, veh::Vehicle)
-    E = pose_to_edges(y, veh::Vehicle)
+function in_workspace(x, env::Environment, veh::Vehicle)
+    E = pose_to_edges(x, veh::Vehicle)
 
     for e in E 
         rows = [collect(1:size(env.W, 1)); 1]
@@ -152,6 +153,7 @@ function in_workspace(y, env::Environment, veh::Vehicle)
     return true
 end
 
+# (?): is this function needed?
 function on_boundary(i, j, k, env::Environment)
     if i == 1 || i == size(env.x_grid,1) || j == 1 || j == size(env.y_grid,1)
         return true
@@ -180,7 +182,7 @@ function pose_to_edges(x, veh::Vehicle)
             [-veh.ext2axle+3/4*veh.ext_l, 1/2*veh.ext_w]]
 
     # calculate points for current pose
-    E_rt = [Vector{Float64}(undef, 2) for _ = 1:size(E_std,1)]  # SPEED: allocation, might be fixed by SA above
+    E_rt = [Vector{Float64}(undef, 2) for _ = eachindex(E_std)]  # SPEED: allocation, might be fixed by SA above
     for (i, e_std) in enumerate(E_std)
         # E_rt[i] = RotMatrix{2}(x[3])*e_std + [x[1], x[2]]   # SPEED: allocation
 
@@ -193,12 +195,7 @@ function pose_to_edges(x, veh::Vehicle)
 end
 
 function find_idx(val, array)
-    if val in array
-        idx = indexin(val, array)[1]    # SPEED: allocation (think it creates an array sometimes -> bad)
-                                        #   - 101.8 μs when array, 8.7 μs when no array (in practice will never exactly be on grid node)
-    else
-        idx = searchsortedfirst(array, val) - 1
-    end
+    idx = searchsortedfirst(array, val) - 1
 
     return idx
 end
@@ -315,7 +312,7 @@ end
 
 #     # vdot_min = Inf
 #     # a_opt = A[1]
-#     # for i in 1:size(A,1)
+#     # for i in eachindex(A)
 #     #     xs = SVector{3, Float64}(x_k)     # TO-DO: clean up variable types
 #     #     xdot = car_EoM(xs, A[i], veh)
 
