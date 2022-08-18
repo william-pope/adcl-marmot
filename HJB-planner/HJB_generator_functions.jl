@@ -107,26 +107,40 @@ function update_node_value_SL(value_array, dt_gen, i::Int, j::Int, k::Int, actio
 
     x_ijk = [env.x_grid[i], env.y_grid[j], env.theta_grid[k]]
 
-    val_p_min = Inf
+    qval_min = Inf
     for u in actions
+        cost_p = get_cost(x_ijk, u, dt_gen)
+
         x_p = runge_kutta_4(x_ijk, u, dt_gen, EoM, veh)
         val_p = interp_value(x_p, value_array, env)
 
-        
+        qval_u = cost_p + val_p
+
+        # # implements obstacle checking for exact propagated state
         # if in_workspace(x_p, env, veh) == true && in_obstacle_set(x_p, env, veh) == false
         #     val_p = interp_value(x_p, value_array, env)
         # else
         #     val_p = 1000.0
         # end
 
-        if val_p < val_p_min
-            val_p_min = val_p
+        if qval_u < qval_min
+            qval_min = qval_u
         end
     end
 
-    val_ijk = dt_gen + val_p_min
+    val_ijk = qval_min
 
     return val_ijk
+end
+
+function get_cost(x_k, u_k, dt_gen)
+    cost_k = dt_gen
+
+    if x_k[1] >= 4.0
+        cost_k = 1/2*cost_k
+    end
+
+    return cost_k
 end
 
 # TO-DO: ignoring obstacle issues for now, will need to address

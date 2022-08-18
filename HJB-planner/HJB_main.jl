@@ -69,9 +69,9 @@ T_theta = [[-pi, pi]]
 # OC2 = circle_to_polygon([4.0, 5.0, 0.6])
 # OC3 = circle_to_polygon([2.8, 8.0, 0.6])
 
-OC1 = circle_to_polygon([6.1, 7.0, 0.6])
-OC2 = circle_to_polygon([4.7, 7.6, 0.6])
-OC3 = circle_to_polygon([3.2, 8.3, 0.6])
+OC1 = circle_to_polygon([2.5, 3.0, 0.6])
+OC2 = circle_to_polygon([6.0, 5.0, 0.6])
+OC3 = circle_to_polygon([3.8, 8.0, 0.6])
 
 # OC1 = circle_to_polygon([65.0, 35.0, 20.0])
 # OC2 = circle_to_polygon([35.0, 70.0, 10.0])
@@ -155,9 +155,9 @@ end
 # plan paths to goal
 x_path_list = []
 
-x_0_list = [[5.8, 1.0, deg2rad(90)],
-            [4.5, 3.0, deg2rad(105)],
-            [2.75, 2.2, deg2rad(80)],
+x_0_list = [[6.3, 1.0, deg2rad(90)],
+            [4.8, 3.0, deg2rad(105)],
+            [3.0, 1.2, deg2rad(80)],
             [1.7, 1.5, deg2rad(165)]]
 
 dt_plan = 0.5
