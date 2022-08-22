@@ -72,7 +72,7 @@ function in_obstacle_set(x, env::Environment, veh::Vehicle)
     E = pose_to_edges(x, veh::Vehicle)
 
     # add more points "c" along sides of vehicle
-    for e in E 
+    for e in E
         for Oi in env.O_vec
             rows = [collect(1:size(Oi, 1)); 1]  # TO-DO: fairly large impact on runtime
 
@@ -113,7 +113,7 @@ function circle_to_polygon(OC_cir)
     # circle radius is used as midpoint radius for polygon faces
     r_p = r_c/cos(pi/pts)
 
-    theta_rng = range(0, 2*pi, pts+1)
+    theta_rng = range(0, 2*pi, length=pts+1)
     OC = Array{Float64}(undef, pts+1, 2)
 
     for (i, theta) in enumerate(theta_rng)
@@ -130,7 +130,7 @@ end
 function in_workspace(x, env::Environment, veh::Vehicle)
     E = pose_to_edges(x, veh::Vehicle)
 
-    for e in E 
+    for e in E
         rows = [collect(1:size(env.W, 1)); 1]
 
         for i in 1:size(env.W, 1)
@@ -170,7 +170,7 @@ function pose_to_edges(x, veh::Vehicle)
             [-veh.ext2axle, -1/2*veh.ext_w],         # bottom left
             [-veh.ext2axle+veh.ext_l, -1/2*veh.ext_w],   # bottom right
             [-veh.ext2axle+veh.ext_l, 1/2*veh.ext_w],    # top right
-            [-veh.ext2axle, 1/6*veh.ext_w],              # left edge refinement              
+            [-veh.ext2axle, 1/6*veh.ext_w],              # left edge refinement
             [-veh.ext2axle, -1/6*veh.ext_w],
             [-veh.ext2axle+1/4*veh.ext_l, -1/2*veh.ext_w],   # bottom edge refinement
             [-veh.ext2axle+1/2*veh.ext_l, -1/2*veh.ext_w],
@@ -250,7 +250,7 @@ end
 #     #       - if both in obs, set du_dy = 0.0
 
 #     #   - think issue is due to both outlier point and central point touching obstacle
-    
+
 #     # interpolate value at surrounding points
 #     v_x, obs_x = value_interp(x, U, O, env)
 #     v_1p, obs_1p = value_interp(x + [env.h_xy, 0.0, 0.0], U, O, env)

@@ -5,9 +5,9 @@ using StaticArrays
 struct Environment
     h_xy::Float64
     h_theta::Float64
-    x_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-    y_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
-    theta_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}
+    x_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}}
+    y_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}}
+    theta_grid::StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}}
     W::Matrix{Float64}
     T_xy::Matrix{Float64}
     T_theta::Vector{Vector{Float64}}
@@ -29,8 +29,6 @@ function dubins_car_EoM(x::SVector{3, Float64}, u::Vector{Float64}, veh::Vehicle
     xdot1 = u[1]*cos(x[3])
     xdot2 = u[1]*sin(x[3])
     xdot3 = u[1]*(1/veh.axle_l)*tan(u[2])
-
     xdot = SVector{3, Float64}(xdot1, xdot2, xdot3)
-
     return xdot
 end

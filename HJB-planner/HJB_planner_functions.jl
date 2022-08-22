@@ -18,7 +18,7 @@ function plan_HJB_path(x_0, actions, dt, value_array, obstacle_array, max_steps,
     end
 
     x_k = x_0
-    x_path = [x_k]  
+    x_path = [x_k]
 
     u_path = []
 
