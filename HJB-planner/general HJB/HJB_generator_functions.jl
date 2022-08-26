@@ -14,24 +14,12 @@ algs_path_mac = "/value_arraysers/willpope/Desktop/Research/marmot-algs/"
 algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 
 # main function to iteratively calculate continuous value function for HJB using finite difference method (STLC models only)
-function solve_HJB_PDE(actions, dt_gen, dval_tol, max_steps, env::Environment, veh::Vehicle, EoM::Function, plot_growth)
-    N_x = size(env.x_grid,1)
-    N_y = size(env.y_grid,1)
-    N_theta = size(env.theta_grid,1)
-
-    # define ijk iterators for Gauss-Seidel sweeping scheme
-    gs_sweeps = [[2:N_x-1, 2:N_y-1, 1:N_theta-1],     # FFF
-                [2:N_x-1, 2:N_y-1, reverse(1:N_theta-1)],  # FFB
-                [2:N_x-1, reverse(2:N_y-1), 1:N_theta-1],  # FBF
-                [reverse(2:N_x-1), 2:N_y-1, 1:N_theta-1],  # BFF
-                [2:N_x-1, reverse(2:N_y-1), reverse(1:N_theta-1)], # FBB
-                [reverse(2:N_x-1), reverse(2:N_y-1), 1:N_theta-1], # BBF
-                [reverse(2:N_x-1), 2:N_y-1, reverse(1:N_theta-1)], # BFB
-                [reverse(2:N_x-1), reverse(2:N_y-1), reverse(1:N_theta-1)]]   # BBB
-
+function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag)
     # initialize value_array, value_array, init_array
-    value_array, init_array, target_array, obstacle_array = initialize_value_array(env, veh)
+    value_array, init_array, target_array, obstacle_array = initialize_value_array(sg, env, veh)
     value_array_old = deepcopy(value_array)
+
+    return value_array
 
     # main function loop
     dval_max = Inf
@@ -49,7 +37,7 @@ function solve_HJB_PDE(actions, dt_gen, dval_tol, max_steps, env::Environment, v
                         # value_array[i,j,k], init_array[i,j,k] = update_node_value_FDM(value_array, init_array, i, j, k, actions, env, veh, EoM)
                         
                         # semi-Lagrangian method
-                        value_array[i,j,k] = update_node_value_SL(value_array, dt_gen, i, j, k, actions, env, veh, EoM)
+                        value_array[i,j,k] = update_node_value_SL(value_array, dt_solve, i, j, k, actions, env, veh, EoM)
                     end
                 end
             end
@@ -81,7 +69,7 @@ function solve_HJB_PDE(actions, dt_gen, dval_tol, max_steps, env::Environment, v
         end
     end
 
-    return value_array, target_array, obstacle_array
+    return value_array
 end
 
 # use modules
@@ -100,16 +88,16 @@ end
 #       - is there a more systematic way of doing this than just checking a big list?
 
 # NOTE: may need to make changes to init_array process
-function update_node_value_SL(value_array, dt_gen, i::Int, j::Int, k::Int, actions, env::Environment, veh::Vehicle, EoM::Function)    
+function update_node_value_SL(value_array, dt_solve, i::Int, j::Int, k::Int, actions, env::Environment, veh::Vehicle, EoM::Function)    
     # ISSUE: value array behaves strangely when dt is small (~<= 0.1) (seems unexpected)
 
     x_ijk = [env.x_grid[i], env.y_grid[j], env.theta_grid[k]]
 
     qval_min = Inf
     for u in actions
-        cost_p = get_cost(x_ijk, u, dt_gen)
+        cost_p = get_cost(x_ijk, u, dt_solve)
 
-        x_p = runge_kutta_4(x_ijk, u, dt_gen, EoM, veh)
+        x_p = runge_kutta_4(x_ijk, u, dt_solve, EoM, veh)
         val_p = interp_value(x_p, value_array, env)
 
         qval_u = cost_p + val_p
@@ -131,8 +119,8 @@ function update_node_value_SL(value_array, dt_gen, i::Int, j::Int, k::Int, actio
     return val_ijk
 end
 
-function get_cost(x_k, u_k, dt_gen)
-    cost_k = dt_gen
+function get_cost(x_k, u_k, dt_solve)
+    cost_k = dt_solve
 
     if x_k[1] >= 4.0
         cost_k = 1/2*cost_k
@@ -206,41 +194,43 @@ function interp_value(x::Vector{Float64}, value_array::Array{Float64, 3}, env::E
 end
 
 # initialize value approximations
-function initialize_value_array(env::Environment, veh::Vehicle)
-    value_array = zeros(Float64, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
-    init_array = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
-    target_array = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
-    obstacle_array = zeros(Bool, (size(env.x_grid,1), size(env.y_grid,1), size(env.theta_grid,1)))
+function initialize_value_array(sg, env, veh)
+    value_array = zeros(Float64, sg.grid_size_array...)
+    init_array = zeros(Bool, sg.grid_size_array...)
+    target_array = zeros(Bool, sg.grid_size_array...)
+    obstacle_array = zeros(Bool, sg.grid_size_array...)
 
-    for i in 1:size(env.x_grid,1)
-        for j in 1:size(env.y_grid,1)
-            for k in 1:size(env.theta_grid,1)
-                x_i = env.x_grid[i]
-                y_j = env.y_grid[j]
-                theta_k = env.theta_grid[k]
+    # TO-DO: iterating over rows is slowe, need to replace with more performant method (especially in solver)
+    for i in 1:size(sg.grid_idx_matrix,1)
+        grid_idx = sg.grid_idx_matrix[i,:]
+        x_ijk = idx_to_state(grid_idx, sg)
 
-                x_ijk = [x_i, y_j, theta_k]
-
-                if in_target_set(x_ijk, env, veh) == true
-                    value_array[i,j,k] = 0.0
-                    init_array[i,j,k] = true
-                    target_array[i,j,k] = true
-                elseif in_workspace(x_ijk, env, veh) == false || in_obstacle_set(x_ijk, env, veh) == true
-                    value_array[i,j,k] = 1000.0
-                    init_array[i,j,k] = false
-                    obstacle_array[i,j,k] = true
-                else
-                    value_array[i,j,k] = 100.0
-                    init_array[i,j,k] = false
-                    target_array[i,j,k] = false
-                    obstacle_array[i,j,k] = false
-                end
-            end
+        # TO-DO: need to update set checkers to use DomainSets.jl (or revert to old method)
+        if in_workspace(x_ijk, env, veh) == false || in_obstacle_set(x_ijk, env, veh) == true
+            value_array[grid_idx...] = 1000.0
+            init_array[grid_idx...] = false
+            obstacle_array[grid_idx...] = true
+        elseif in_target_set(x_ijk, env, veh) == true
+            value_array[grid_idx...] = 0.0
+            init_array[grid_idx...] = true
+            target_array[grid_idx...] = true
+        else
+            value_array[grid_idx...] = 100.0
+            init_array[grid_idx...] = false
+            target_array[grid_idx...] = false
+            obstacle_array[grid_idx...] = false
         end
     end
 
-    value_array = deepcopy(value_array)
-    init_array = deepcopy(init_array)
-
     return value_array, init_array, target_array, obstacle_array
+end
+
+function idx_to_state(grid_idx, sg)
+    x_ijk = zeros(Float64, sg.state_dim)
+
+    for (d, i) in enumerate(grid_idx)
+        x_ijk[d] = sg.grid_array[d][i] 
+    end
+
+    return x_ijk
 end

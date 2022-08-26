@@ -5,41 +5,52 @@ using BSON: @save, @load
 using BenchmarkTools
 using ProfileView
 
+include("HJB_definition_functions.jl")
 include("HJB_generator_functions.jl")
 include("HJB_planner_functions.jl")
 include("HJB_utils.jl")
 include("dynamics_models.jl")
 include("HJB_plotting.jl")
 
-# 2) PARAMETERS --- --- ---
+# 1) GLOBAL PARAMETERS --- --- ---
+algs_path_mac = "./"
+algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
+algs_path = algs_path_mac
 
- 
+# solver params
+solve_HJB_flag = true
+plot_growth_flag = true
+plot_result_flag = true
 
-# # Reeds-Shepp car
-# actions = [[a_v,a_phi] for a_v in [-veh.u_vb_max, veh.u_vf_max], a_phi in [-veh.u_phi_max, 0.0, veh.u_phi_max]]
+dt_solve = 0.5
+dval_tol = 0.005
+max_solve_steps = 5e3
 
-# Dubins car
-actions = [[a_v, a_phi] for a_v in [veh.u_vf_max], a_phi in [-veh.u_phi_max, -1/2*veh.u_phi_max, 0.0, 1/2*veh.u_phi_max, veh.u_phi_max]]
+# planner params
+run_HJB_planner_flag = false
+HJB_path_list = []
 
-actions = reshape(actions, (length(actions),1))
-sort!(actions, dims=1)
+dt_plan = 0.5
+max_plan_steps = 2e3
 
-# define environment (workspace, obstacles, goal_state)
+
+# 2) DEFINITIONS --- --- ---
+# define environment (workspace, obstacles, goal)
 env_name = "aspen_empty"
-env = gen_environment(env_name)
+env = define_environment(env_name)
 
 # define vehicle and dynamics
 veh_name = "marmot"
-veh = gen_vehicle(veh_name)
+veh = define_vehicle(veh_name)
 
 EoM = bicycle_3d_EoM
 
 # define state grid
-state_grid = gen_state_grid(env, veh, EoM)
+sg = define_state_grid(env, veh, EoM)
 
 # define action set
-actions = gen_actions(veh, EoM)
-
+actions = define_actions(veh, EoM)
+# ISSUE: need to differentiate between Dubins car and Reeds-Shepp car somewhere
 
 
 # TO-DO: 
@@ -61,77 +72,57 @@ actions = gen_actions(veh, EoM)
 #           - action set
 #           - physical parameters
 
+# STATUS:
+#   - initialize_value_array() seems to be working, but haven't checked rigorously
+#   - 5d model takes forever to solve
+
 # 3) MAIN --- --- ---
 println("\nstart --- --- ---")
 
-algs_path_mac = "/Users/willpope/Desktop/Research/marmot-algs/"
-algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
+if solve_HJB_flag == true    
+    value_array = solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag)
 
-algs_path = algs_path_mac
-
-gen_HJB = true
-plan_HJB = true
-
-plot_growth = true
-plot_result = true
-
-# generate HJB value function
-dt_gen = 0.5
-
-if gen_HJB == true
-    du_tol = 0.005
-    max_steps = 5e3
-    
-    value_array, target_array, obstacle_array = solve_HJB_PDE(actions, dt_gen, du_tol, max_steps, env, veh, EoM, plot_growth)
-
-    N_grid = size(env.x_grid,1) * size(env.y_grid,1) * size(env.theta_grid,1)
-    println("total grid nodes = ", N_grid)
-
-    @save algs_path*"HJB-planner/bson/value_array.bson" value_array
-    @save algs_path*"HJB-planner/bson/target_array.bson" target_array
-    @save algs_path*"HJB-planner/bson/obstacle_array.bson" obstacle_array
-    @save algs_path*"HJB-planner/bson/env.bson" env
-    @save algs_path*"HJB-planner/bson/veh.bson" veh
+    @save algs_path*"bson/value_array.bson" value_array
+    @save algs_path*"bson/env.bson" env
+    @save algs_path*"bson/veh.bson" veh
 else
-    @load algs_path*"HJB-planner/bson/value_array.bson" value_array
-    @load algs_path*"HJB-planner/bson/target_array.bson" target_array
-    @load algs_path*"HJB-planner/bson/obstacle_array.bson" obstacle_array
-    @load algs_path*"HJB-planner/bson/env.bson" env
-    @load algs_path*"HJB-planner/bson/veh.bson" veh
+    @load algs_path*"bson/value_array.bson" value_array
+    @load algs_path*"bson/env.bson" env
+    @load algs_path*"bson/veh.bson" veh
 end
 
 
-# plan paths to goal
-x_path_list = []
+# # plan paths to goal
+# x_path_list = []
 
-x_0_list = [[6.3, 1.0, deg2rad(90)],
-            [4.8, 3.0, deg2rad(105)],
-            [3.0, 1.2, deg2rad(80)],
-            [1.7, 1.5, deg2rad(165)]]
+# x_0_list = [[6.3, 1.0, deg2rad(90)],
+#             [4.8, 3.0, deg2rad(105)],
+#             [3.0, 1.2, deg2rad(80)],
+#             [1.7, 1.5, deg2rad(165)]]
 
-dt_plan = 0.5
+# dt_plan = 0.5
 
-if plan_HJB == true
-    max_steps = 5e3
+# if plan_HJB == true
+#     max_steps = 5e3
 
-    for x_0 in x_0_list
-        println("value at x_0 = ", interp_value(x_0, value_array, env))
+#     for x_0 in x_0_list
+#         println("value at x_0 = ", interp_value(x_0, value_array, env))
 
-        x_path, u_path, step = plan_HJB_path(x_0, actions, dt_plan, value_array, obstacle_array, max_steps, EoM, env, veh)
-        push!(x_path_list, x_path)
+#         x_path, u_path, step = plan_HJB_path(x_0, actions, dt_plan, value_array, obstacle_array, max_steps, EoM, env, veh)
+#         push!(x_path_list, x_path)
 
-        path_time = step*dt_plan
-        println("path execution time: ", path_time, " sec")
-    end
-end
+#         path_time = step*dt_plan
+#         println("path execution time: ", path_time, " sec")
+#     end
+# end
     
 
-# 4) PLOTS --- --- ---
+# # 4) PLOTS --- --- ---
 
-plot_HJB_result(value_array, x_path_list, env, veh)
+# plot_HJB_result(value_array, x_path_list, env, veh)
 
-# @btime HJB_action(x_0, value_array, A, obstacle_array, env, veh)
+# # @btime HJB_action(x_0, value_array, A, obstacle_array, env, veh)
 
-# ProfileView.@profview for _ in 1:1000
-#     HJB_action(x_0, value_array, A, obstacle_array, env, veh)
-# end
+# # ProfileView.@profview for _ in 1:1000
+# #     HJB_action(x_0, value_array, A, obstacle_array, env, veh)
+# # end
