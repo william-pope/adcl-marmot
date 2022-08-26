@@ -215,7 +215,7 @@ function initialize_value_array(sg, env, veh)
             init_array[grid_idx...] = true
             target_array[grid_idx...] = true
         else
-            value_array[grid_idx...] = 100.0
+            value_array[grid_idx...] = 100.0    # TO-DO: make 1000.0
             init_array[grid_idx...] = false
             target_array[grid_idx...] = false
             obstacle_array[grid_idx...] = false

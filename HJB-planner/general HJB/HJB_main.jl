@@ -85,6 +85,11 @@ if solve_HJB_flag == true
     @save algs_path*"bson/value_array.bson" value_array
     @save algs_path*"bson/env.bson" env
     @save algs_path*"bson/veh.bson" veh
+
+    # (?): can EoM function be saved as a bson?
+    # @save algs_path*"bson/env.bson" EoM
+    # @save algs_path*"bson/veh.bson" sg
+    # @save algs_path*"bson/env.bson" actions
 else
     @load algs_path*"bson/value_array.bson" value_array
     @load algs_path*"bson/env.bson" env
@@ -93,7 +98,7 @@ end
 
 
 # # plan paths to goal
-# x_path_list = []
+x_path_list = []
 
 # x_0_list = [[6.3, 1.0, deg2rad(90)],
 #             [4.8, 3.0, deg2rad(105)],
@@ -119,7 +124,7 @@ end
 
 # # 4) PLOTS --- --- ---
 
-# plot_HJB_result(value_array, x_path_list, env, veh)
+plot_HJB_result(value_array, x_path_list, env, veh)
 
 # # @btime HJB_action(x_0, value_array, A, obstacle_array, env, veh)
 
