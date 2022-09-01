@@ -72,6 +72,15 @@ function state_to_body(x, veh)
     return body
 end
 
+function multi2single_ind(ind_m, sg)
+    ind_s = 1
+    for d in eachindex(ind_m)
+        ind_s += (ind_m[d]-1)*prod(sg.state_grid.cut_counts[1:(d-1)])
+    end
+
+    return ind_s
+end
+
 function find_idx(val, array)
     idx = searchsortedfirst(array, val) - 1
 

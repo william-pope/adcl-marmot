@@ -1,6 +1,7 @@
 # Hamilton-Jacobi-Bellman demonstration
 
 using Plots
+using DomainSets
 using BSON: @save, @load
 using BenchmarkTools
 using ProfileView
@@ -22,15 +23,15 @@ solve_HJB_flag = true
 plot_growth_flag = true
 plot_result_flag = true
 
-dt_solve = 0.5
+dt_solve = 0.25
 dval_tol = 0.005
-max_solve_steps = 5e3
+max_solve_steps = 1
 
 # planner params
 run_HJB_planner_flag = false
 HJB_path_list = []
 
-dt_plan = 0.5
+dt_plan = 0.25
 max_plan_steps = 2e3
 
 
@@ -46,7 +47,10 @@ veh = define_vehicle(veh_name)
 EoM = bicycle_3d_EoM
 
 # define state grid
-sg = define_state_grid(env, veh, EoM)
+state_space = [[0.0, 5.5], [0.0, 11.0], [-pi/2, pi/2]]
+axis_step_sizes = [0.25, 0.25, deg2rad(10)]
+angle_wrap = [false, false, true]
+sg = define_state_grid(state_space, axis_step_sizes, angle_wrap)
 
 # define action set
 actions = define_actions(veh, EoM)
@@ -74,7 +78,10 @@ actions = define_actions(veh, EoM)
 
 # STATUS:
 #   - initialize_value_array() seems to be working, but haven't checked rigorously
-#   - 5d model takes forever to solve
+# #   - 5d model takes forever to solve
+
+# STATUS (08/31/22):
+#   - initialize() works with new GridInterpolations method (checked free space, edge, goal values)
 
 # 3) MAIN --- --- ---
 println("\nstart --- --- ---")
@@ -124,7 +131,7 @@ x_path_list = []
 
 # # 4) PLOTS --- --- ---
 
-plot_HJB_result(value_array, x_path_list, env, veh)
+# plot_HJB_result(value_array, x_path_list, env, veh)
 
 # # @btime HJB_action(x_0, value_array, A, obstacle_array, env, veh)
 

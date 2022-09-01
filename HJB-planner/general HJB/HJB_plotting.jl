@@ -3,11 +3,12 @@
 include("HJB_utils.jl")
 include("dynamics_models.jl")
 
+# TO-DO: need to fix to make work with 1-d value array
 function plot_HJB_result(value_array, x_path_list, env, veh)
     # plot HJB value function as a heat map
-    for k_plot in eachindex(sg.grid_array[3])
-        p_k = heatmap(sg.grid_array[1], sg.grid_array[2], 
-                    transpose(value_array[:,:,k_plot]), clim=(0,150),
+    for k_plot in eachindex(sg.state_grid.cutPoints[3])
+        p_k = heatmap(sg.state_grid.cutPoints[1], sg.state_grid.cutPoints[2], 
+                    transpose(value_array[k_plot]), clim=(0,150),
                     aspect_ratio=:equal, 
                     size=(800,800),
                     # xlabel="x-axis [m]", ylabel="y-axis [m]", 
@@ -23,33 +24,32 @@ function plot_HJB_result(value_array, x_path_list, env, veh)
                     left_margin = 8*Plots.mm,
                     right_margin = 0*Plots.mm)
 
-        # TO-DO: plot as outlines with no fill
-        plot!(p_k, env.workspace, color="blue", alpha=0.25, label="Workspace")
-        plot!(p_k, env.goal, color="green", alpha=0.25, label="Goal")
+        plot!(p_k, env.workspace, alpha=0.0, linecolor=:black, linewidth=2, linealpha=1.0, label="Workspace")
+        plot!(p_k, env.goal, alpha=0.0, linecolor=:green, linewidth=2, linealpha=1.0, label="Goal")
 
-        # if isempty(env.O_vec) == false
-        #     plot_polygon(p_k, env.O_vec[1], 3, :red, "Obstacle")
-        #     for O in env.O_vec
-        #         plot_polygon(p_k, O, 3, :red, "")
-        #     end
-        # end
+        if isempty(env.obstacle_list) == false
+            plot!(p_k, env.obstacle_list[1], alpha=0.0, linecolor=:red, linewidth=2, linealpha=1.0, label="Obstacle")
+
+            for obstacle in env.obstacle_list
+                plot!(p_k, obstacle, alpha=0.0, linecolor=:red, linewidth=2, linealpha=1.0)
+            end
+        end
 
         # vehicle figure
-        x_pos = sg.grid_array[1][end] + 1.5
-        y_pos = sg.grid_array[2][end]/2  - 0.5
+        x_pos = sg.state_grid.cutPoints[1][end] + 1.5
+        y_pos = sg.state_grid.cutPoints[2][end]/2  - 0.5
 
         x_max = x_pos + sqrt((veh.axis_to_cent_x + 1/2*veh.body_length)^2 + (veh.axis_to_cent_y + 1/2*veh.body_width)^2)
         y_min = y_pos - sqrt((veh.axis_to_cent_x + 1/2*veh.body_length)^2 + (veh.axis_to_cent_y + 1/2*veh.body_width)^2)
 
-        x = [x_pos, y_pos, sg.grid_array[3][k_plot]]
+        x = [x_pos, y_pos, sg.state_grid.cutPoints[3][k_plot]]
         
         veh_body = state_to_body(x, veh)
             
-        plot!(p_k, [x_pos], [y_pos], 
-            markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
+        plot!(p_k, [x_pos], [y_pos], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
 
         # plot_polygon(p_k, V, 2, :blue, "Vehicle")
-        plot!(p_k, veh_body, color="blue", label="Vehicle")
+        plot!(p_k, veh_body, alpha=0.0, linecolor=:blue, linewidth=2, linealpha=1.0, label="Vehicle")
 
         plot!(p_k, [x_max], [y_pos], markercolor=:white, label="")
         plot!(p_k, [x_pos], [y_min], markercolor=:white, label="")

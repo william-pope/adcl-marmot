@@ -13,6 +13,9 @@ include("HJB_plotting.jl")
 algs_path_mac = "/value_arraysers/willpope/Desktop/Research/marmot-algs/"
 algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 
+# STATUS: GridInterp.jl looks good to go, just need to rework around it
+#   - still need to figure out specifics for Gauss-Seidel flipping
+
 # main function to iteratively calculate continuous value function for HJB using finite difference method (STLC models only)
 function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag)
     # initialize value_array, value_array, init_array
@@ -21,28 +24,39 @@ function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve
 
     return value_array
 
+    # TO-DO: rewrite Gauss-Seidel mechanism to use new matrix
+    # - should be similar to initialize() use, but need to flip columns in the matrix to do different sweeps
+
     # main function loop
     dval_max = Inf
-    step = 1
-    gs = 1
+    solve_step = 1
+    gs_step = 1
 
-    while dval_max > dval_tol && step < max_steps
-        sweep = gs_sweeps[gs]
-        
-        for i in sweep[1]
-            for j in sweep[2]
-                for k in sweep[3]
-                    if target_array[i,j,k] == false && obstacle_array[i,j,k] == false
-                        # # finite difference method
-                        # value_array[i,j,k], init_array[i,j,k] = update_node_value_FDM(value_array, init_array, i, j, k, actions, env, veh, EoM)
-                        
-                        # semi-Lagrangian method
-                        value_array[i,j,k] = update_node_value_SL(value_array, dt_solve, i, j, k, actions, env, veh, EoM)
-                    end
-                end
+    while dval_max > dval_tol && solve_step < max_solve_steps
+        # flip rows in idx matrix according to Gauss-Seidel scheme
+        gs_idx_matrix = zeros(Float64, size(sg.grid_idx_matrix))
+        for d in sg.gs_sweep_matrix[:,gs_step]
+            if d == 1
+                gs_idx_matrix[d,:] = reverse(sg.gs_sweep_matrix[d,:])
+            else
+                gs_idx_matrix[d,:] = sg.gs_sweep_matrix[d,:]
             end
         end
 
+        for j in 1:sg.num_nodes
+            grid_idx = sg.gs_idx_matrix[:,j]
+            x_ijk = idx_to_state(grid_idx, sg)
+
+            if target_array[ind_s] == false && obstacle_array[ind_s] == false
+                # # finite difference method
+                # value_array[i,j,k], init_array[i,j,k] = update_node_value_FDM(value_array, init_array, i, j, k, actions, env, veh, EoM)
+                
+                # semi-Lagrangian method
+                value_array[i,j,k] = update_node_value_SL(x_ijk, value_array, actions, dt_solve, EoM, env, veh, sg)
+            end
+        end
+        
+        # TO-DO: see if deepcopy() can be removed
         value_array[:,:,end] = deepcopy(value_array[:,:,1])
         init_array[:,:,end] = deepcopy(init_array[:,:,1])
 
@@ -50,17 +64,18 @@ function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve
         dval = value_array - value_array_old
         dval_max = maximum(abs.(dval))
 
+        # TO-DO: see if deepcopy() can be removed
         value_array_old = deepcopy(value_array)
 
         println("step: ", step, ", dval_max = ", dval_max)
 
-        if gs == 8
-            gs = 1
+        if gs_step == 2^sg.state_dim
+            gs_step = 1
         else
-            gs += 1
+            gs_step += 1
         end
 
-        step += 1
+        solve_step += 1
 
         # plot ---
         if plot_growth == true
@@ -88,16 +103,14 @@ end
 #       - is there a more systematic way of doing this than just checking a big list?
 
 # NOTE: may need to make changes to init_array process
-function update_node_value_SL(value_array, dt_solve, i::Int, j::Int, k::Int, actions, env::Environment, veh::Vehicle, EoM::Function)    
+function update_node_value_SL(x_ijk, value_array, actions, dt_solve, EoM, env, veh, sg) 
     # ISSUE: value array behaves strangely when dt is small (~<= 0.1) (seems unexpected)
-
-    x_ijk = [env.x_grid[i], env.y_grid[j], env.theta_grid[k]]
 
     qval_min = Inf
     for u in actions
         cost_p = get_cost(x_ijk, u, dt_solve)
 
-        x_p = runge_kutta_4(x_ijk, u, dt_solve, EoM, veh)
+        x_p = runge_kutta_4(x_ijk, u, dt_solve, EoM, veh, sg)
         val_p = interp_value(x_p, value_array, env)
 
         qval_u = cost_p + val_p
@@ -122,15 +135,13 @@ end
 function get_cost(x_k, u_k, dt_solve)
     cost_k = dt_solve
 
-    if x_k[1] >= 4.0
-        cost_k = 1/2*cost_k
-    end
-
     return cost_k
 end
 
+# NOTE: may still need this function to wrap around interpolate() to do obstacle grid overestimation stuff
 # TO-DO: ignoring obstacle issues for now, will need to address
-#   - may need to keep track of RIC (kinda like H-J reachability stuff...)
+#   - may need to keep track of RIC (kinda like H-J reachability stuff...) in order to track "invalid" nodes
+#   - don't need to check if neighbors are invalid every time, can store during initialization if node borders an obstacle
 function interp_value(x::Vector{Float64}, value_array::Array{Float64, 3}, env::Environment)
     x_itp = deepcopy(x)
 
@@ -144,93 +155,39 @@ function interp_value(x::Vector{Float64}, value_array::Array{Float64, 3}, env::E
     x_itp[2] <= env.y_grid[1] ? x_itp[2] = env.y_grid[1]+1/16*env.h_xy : x_itp[2] = x_itp[2]
     x_itp[2] >= env.y_grid[end] ? x_itp[2] = env.y_grid[end]-1/16*env.h_xy : x_itp[2] = x_itp[2]
 
-    # get box node indices
-    i_0 = find_idx(x_itp[1], env.x_grid)
-    j_0 = find_idx(x_itp[2], env.y_grid)
-    k_0 = find_idx(x_itp[3], env.theta_grid)
-    
-    i_1 = i_0 + 1
-    j_1 = j_0 + 1
-    k_1 = k_0 + 1
-
-    if k_0 == 0
-        k_0 = size(env.theta_grid,1) - 1
-        k_1 = 1
-    end
-
-    # get box node states
-    x_0 = env.x_grid[i_0]
-    y_0 = env.y_grid[j_0]
-    theta_0 = env.theta_grid[k_0]
-
-    x_1 = env.x_grid[i_1]   
-    y_1 = env.y_grid[j_1]
-    theta_1 = env.theta_grid[k_1]
-
-    x_d = (x_itp[1] - x_0)/(x_1 - x_0)
-    y_d = (x_itp[2] - y_0)/(y_1 - y_0)
-    theta_d = (x_itp[3] - theta_0)/(theta_1 - theta_0)
-
-    val_000 = value_array[i_0, j_0, k_0]
-    val_100 = value_array[i_1, j_0, k_0]
-    val_010 = value_array[i_0, j_1, k_0]
-    val_110 = value_array[i_1, j_1, k_0]
-    val_001 = value_array[i_0, j_0, k_1]
-    val_101 = value_array[i_1, j_0, k_1]
-    val_011 = value_array[i_0, j_1, k_1]
-    val_111 = value_array[i_1, j_1, k_1]
-
-    val_00 = val_000*(1 - x_d) + val_100*x_d
-    val_01 = val_001*(1 - x_d) + val_101*x_d
-    val_10 = val_010*(1 - x_d) + val_110*x_d
-    val_11 = val_011*(1 - x_d) + val_111*x_d
-
-    val_0 = val_00*(1 - y_d) + val_10*y_d
-    val_1 = val_01*(1 - y_d) + val_11*y_d
-
-    val_itp = val_0*(1 - theta_d) + val_1*theta_d
-
     return val_itp
 end
 
 # initialize value approximations
 function initialize_value_array(sg, env, veh)
-    value_array = zeros(Float64, sg.grid_size_array...)
-    init_array = zeros(Bool, sg.grid_size_array...)
-    target_array = zeros(Bool, sg.grid_size_array...)
-    obstacle_array = zeros(Bool, sg.grid_size_array...)
+    # TO-DO: need to figure out indexing for data arrays
+    #   - if data array has to be 1-d, can write some equation as f(ind) to calc 1-d ind
+    value_array = zeros(Float64, length(sg.state_grid))
+    init_array = zeros(Bool, length(sg.state_grid))
+    target_array = zeros(Bool, length(sg.state_grid))
+    obstacle_array = zeros(Bool, length(sg.state_grid))
 
-    # TO-DO: iterating over rows is slowe, need to replace with more performant method (especially in solver)
-    for i in 1:size(sg.grid_idx_matrix,1)
-        grid_idx = sg.grid_idx_matrix[i,:]
-        x_ijk = idx_to_state(grid_idx, sg)
+    for ind_m in sg.ind_gs_array[1]
+        x = sg.state_grid[ind_m...]
+        ind_s = multi2single_ind(ind_m, sg)
 
-        # TO-DO: need to update set checkers to use DomainSets.jl (or revert to old method)
-        if in_workspace(x_ijk, env, veh) == false || in_obstacle_set(x_ijk, env, veh) == true
-            value_array[grid_idx...] = 1000.0
-            init_array[grid_idx...] = false
-            obstacle_array[grid_idx...] = true
-        elseif in_target_set(x_ijk, env, veh) == true
-            value_array[grid_idx...] = 0.0
-            init_array[grid_idx...] = true
-            target_array[grid_idx...] = true
+        # println(ind_m, " -> ", ind_s, " -> ", x)
+
+        if in_workspace(x, env, veh) == false || in_obstacle_set(x, env, veh) == true
+            value_array[ind_s] = 1000.0
+            init_array[ind_s] = false
+            obstacle_array[ind_s] = true
+        elseif in_target_set(x, env, veh) == true
+            value_array[ind_s] = 0.0
+            init_array[ind_s] = true
+            target_array[ind_s] = true
         else
-            value_array[grid_idx...] = 100.0    # TO-DO: make 1000.0
-            init_array[grid_idx...] = false
-            target_array[grid_idx...] = false
-            obstacle_array[grid_idx...] = false
+            value_array[ind_s] = 100.0    # TO-DO: make 1000.0
+            init_array[ind_s] = false
+            target_array[ind_s] = false
+            obstacle_array[ind_s] = false
         end
     end
 
     return value_array, init_array, target_array, obstacle_array
-end
-
-function idx_to_state(grid_idx, sg)
-    x_ijk = zeros(Float64, sg.state_dim)
-
-    for (d, i) in enumerate(grid_idx)
-        x_ijk[d] = sg.grid_array[d][i] 
-    end
-
-    return x_ijk
 end

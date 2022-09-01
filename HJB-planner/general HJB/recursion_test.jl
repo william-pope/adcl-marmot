@@ -25,17 +25,17 @@
 
 # display(m)
 
-state_dim = 5
+state_dim = 3
 
 gs_array = fill(0:1, state_dim)
 arr1 = collect(Iterators.product(gs_array...))
-arr2 = reshape(arr1, (length(arr1),1))
+arr2 = reshape(arr1, (1,length(arr1)))
 
-gs_sweep_matrix = zeros(Int64, (2^state_dim, state_dim))
+gs_sweep_matrix = zeros(Int64, (state_dim, 2^state_dim))
 
-for row in eachindex(arr2)
-    for b in 1:state_dim
-        gs_sweep_matrix[row, b] = arr2[row][b]
+for j in eachindex(arr2)
+    for d in 1:state_dim
+        gs_sweep_matrix[d, j] = arr2[j][d]
     end
 end
 

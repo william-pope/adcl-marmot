@@ -2,6 +2,7 @@
 
 using DomainSets
 using LazySets
+using GridInterpolations
 
 struct Environment
     workspace::VPolygon    # region
@@ -24,14 +25,9 @@ struct Vehicle
 end
 
 struct StateGrid
-    grid_array::Array{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}
+    state_grid::RectangleGrid
     angle_wrap_array::Array{Bool}
-    # step_array::Array{Float64}
-    grid_size_array::Array{Int64}
-    state_dim::Int64
-    # iter_array::Vector{UnitRange{Int64}}
-    grid_idx_matrix::Matrix{Int64}
-    gs_sweep_matrix::Matrix{Int64}
+    ind_gs_array::Array
 end
 
 function define_environment(env_name)
@@ -79,70 +75,40 @@ function define_vehicle(veh_name)
     return veh
 end
 
-# TO-DO: add array that encodes whether grid wraps around unit circle (theta, phi)
+
 # a[:,2] = reverse(a[:,2]) -> use for Gauss-Seidel sweeps
-function define_state_grid(env, veh, EoM)
-    step_array = [0.25, 0.25, deg2rad(11.25), 0.25, 0.1]
+function define_state_grid(state_space, axis_step_sizes, angle_wrap)
+    state_iters = [minimum(axis):axis_step_sizes[i]:maximum(axis) for (i, axis) in enumerate(state_space)]
+    state_grid = RectangleGrid(state_iters...)
 
-    # define state grid
-    x_grid = minimum(getindex.(env.workspace.vertices, 1)) : step_array[1] : maximum(getindex.(env.workspace.vertices, 1))
-    y_grid = minimum(getindex.(env.workspace.vertices, 2)) : step_array[2] : maximum(getindex.(env.workspace.vertices, 2))
-    theta_grid = -pi : step_array[3] : pi
-    v_grid = veh.v_range[1] : step_array[4] : veh.v_range[2]
-    phi_grid = veh.phi_range[1] : step_array[5] : veh.phi_range[2]
+    # Gauss-Seidel
+    gs_iters = [[0,1] for axis in state_space]
+    gs_prod = Iterators.product(gs_iters...)
+    gs_list = Iterators.map(tpl -> convert(SVector{length(gs_iters), Int}, tpl), gs_prod)
 
-    grid_array = [x_grid, y_grid, theta_grid, v_grid, phi_grid]
-    angle_wrap_array = [false, false, true, false, true]
+    # for sweep in gs_list, need to define ind_list
+    ind_gs_array = []
+    for (i_gs, gs) in enumerate(gs_list)
 
-    grid_size_array = [size(axis,1) for axis in grid_array]
-    iter_array = [1:ax_size for ax_size in grid_size_array]
-
-    # modify arrays for chosen EoM
-    if EoM == bicycle_3d_EoM
-        delete_idx = [4,5]
-    elseif EoM == bicycle_4d_v_EoM
-        delete_idx = [5]
-    elseif EoM == bicycle_4d_phi_EoM
-        delete_idx = [4]
-    elseif EoM == bicycle_5d_EoM
-        delete_idx = []
-    end
-
-    deleteat!(grid_array, delete_idx)
-    deleteat!(angle_wrap_array, delete_idx)
-    deleteat!(step_array, delete_idx)
-    deleteat!(grid_size_array, delete_idx)
-    deleteat!(iter_array, delete_idx)
-
-    # define grid_idx_matrix
-    state_dim = size(grid_array, 1)
-    num_nodes = prod(grid_size_array)
-    
-    arr1 = collect(Iterators.product(iter_array...))
-    arr2 = reshape(arr1, (length(arr1),1))
-    
-    grid_idx_matrix = zeros(Int64, (num_nodes, state_dim))
-    
-    for row in eachindex(arr2)
-        for d in 1:state_dim
-            grid_idx_matrix[row, d] = arr2[row][d]
+        # for axis in sweep = [0,1,1], reverse ind_iters
+        ind_iters = Array{StepRange{Int64, Int64}}(undef, size(state_space,1))
+        for (i_ax, ax) in enumerate(gs)
+            if gs[i_ax] == 0.0
+                # forward
+                ind_iters[i_ax] = 1:1:size(state_iters[i_ax],1)
+            else
+                # reverse
+                ind_iters[i_ax] = size(state_iters[i_ax],1):-1:1
+            end
         end
+
+        ind_prod = Iterators.product(ind_iters...)
+        ind_list = Iterators.map(tpl -> convert(SVector{length(ind_iters), Int}, tpl), ind_prod)
+
+        push!(ind_gs_array, ind_list)
     end
 
-    # define Gauss-Seidel matrix
-    gs_array = fill(0:1, state_dim)
-    arr1 = collect(Iterators.product(gs_array...))
-    arr2 = reshape(arr1, (length(arr1),1))
-
-    gs_sweep_matrix = zeros(Int64, (2^state_dim, state_dim))
-
-    for row in eachindex(arr2)
-        for b in 1:state_dim
-            gs_sweep_matrix[row, b] = arr2[row][b]
-        end
-    end
-
-    sg = StateGrid(grid_array, angle_wrap_array, grid_size_array, state_dim, grid_idx_matrix, gs_sweep_matrix)
+    sg = StateGrid(state_grid, angle_wrap, ind_gs_array)
     return sg
 end
 
