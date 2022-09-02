@@ -35,6 +35,9 @@ function in_workspace(x, env, veh)
     return false
 end
 
+# ISSUE: looks like can't use isdisjoint() between VPolygon (vehicle) and Ball2 (obstacle)
+#   - intersection() doesn't work either...
+#   - may be able to just convert circles to VPolygons
 # obstacle set checker
 function in_obstacle_set(x, env, veh)
     veh_body = state_to_body(x, veh)
@@ -79,6 +82,22 @@ function multi2single_ind(ind_m, sg)
     end
 
     return ind_s
+end
+
+function circle2vpolygon(cent_cir, r_cir)
+    # number of points used to discretize edge of circle
+    pts = 16
+
+    # circle radius is used as midpoint radius for polygon faces (over-approximation)
+    r_poly = r_cir/cos(pi/pts)
+
+    theta_rng = range(0, 2*pi, length=pts+1)
+
+    cir_vertices = [[cent_cir[1] + r_poly*cos(theta), cent_cir[2] + r_poly*sin(theta)] for theta in theta_rng]
+    
+    poly_cir = VPolygon(cir_vertices)
+    
+    return poly_cir
 end
 
 function find_idx(val, array)

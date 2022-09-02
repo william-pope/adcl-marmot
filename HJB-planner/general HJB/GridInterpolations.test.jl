@@ -17,8 +17,6 @@ x = [1.5, 1, 1]
 #       - not that useful, because no easy way to look up index within ind_list
 #       - should be able to write explicit equation that calculates 1-d index from n-d index
 
-
-
 function multi2single_ind(ind_m, sg)
     ind_s = 1
     for d in eachindex(ind_m)
@@ -32,3 +30,6 @@ ind_m = [3, 2]
 lens = [3, 4]
 
 # @show ind_s = multi2single_2(ind_m, lens)
+
+# testing 1-d data array -> n-d data array
+value_array_m = reshape(value_array, state_grid.cut_counts...)

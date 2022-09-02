@@ -22,10 +22,11 @@ algs_path = algs_path_mac
 solve_HJB_flag = true
 plot_growth_flag = true
 plot_result_flag = true
+heatmap_clim = 10
 
 dt_solve = 0.25
 dval_tol = 0.005
-max_solve_steps = 1
+max_solve_steps = 1e3
 
 # planner params
 run_HJB_planner_flag = false
@@ -37,8 +38,12 @@ max_plan_steps = 2e3
 
 # 2) DEFINITIONS --- --- ---
 # define environment (workspace, obstacles, goal)
-env_name = "aspen_empty"
-env = define_environment(env_name)
+workspace = VPolygon([[0.0, 0.0], [5.5, 0.0], [5.5, 11.0], [0.0, 11.0]])
+obstacle_list = [circle2vpolygon([1.5, 3.0], 0.5), 
+                circle2vpolygon([2.7, 7.5], 0.5),
+                circle2vpolygon([3.9, 4.8], 0.5)]
+goal = VPolygon([[2.25, 10.0], [3.25, 10.0], [3.25, 11.0], [2.25, 11.0]])
+env = define_environment(workspace, obstacle_list, goal)
 
 # define vehicle and dynamics
 veh_name = "marmot"
@@ -47,13 +52,15 @@ veh = define_vehicle(veh_name)
 EoM = bicycle_3d_EoM
 
 # define state grid
-state_space = [[0.0, 5.5], [0.0, 11.0], [-pi/2, pi/2]]
-axis_step_sizes = [0.25, 0.25, deg2rad(10)]
+state_space = [[0.0, 5.5], [0.0, 11.0], [-pi, pi]]
+dx_sizes = [0.25, 0.25, deg2rad(10)]
 angle_wrap = [false, false, true]
-sg = define_state_grid(state_space, axis_step_sizes, angle_wrap)
+sg = define_state_grid(state_space, dx_sizes, angle_wrap)
 
 # define action set
-actions = define_actions(veh, EoM)
+action_space = [[-0.75, 1.5], [-0.475, 0.475]]
+du_nums = [2, 3]
+action_grid = define_action_grid(action_space, du_nums)
 # ISSUE: need to differentiate between Dubins car and Reeds-Shepp car somewhere
 
 
@@ -83,11 +90,15 @@ actions = define_actions(veh, EoM)
 # STATUS (08/31/22):
 #   - initialize() works with new GridInterpolations method (checked free space, edge, goal values)
 
+# STATUS (09/01/2022):
+#   - solver works with obstacles, solutions look correct
+#   - need to work on action space definition and handling
+
 # 3) MAIN --- --- ---
 println("\nstart --- --- ---")
 
 if solve_HJB_flag == true    
-    value_array = solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag)
+    value_array = solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
 
     @save algs_path*"bson/value_array.bson" value_array
     @save algs_path*"bson/env.bson" env
@@ -131,7 +142,9 @@ x_path_list = []
 
 # # 4) PLOTS --- --- ---
 
-# plot_HJB_result(value_array, x_path_list, env, veh)
+if plot_result_flag == true
+    plot_HJB_result(value_array, heatmap_clim, x_path_list, env, veh, sg)
+end
 
 # # @btime HJB_action(x_0, value_array, A, obstacle_array, env, veh)
 

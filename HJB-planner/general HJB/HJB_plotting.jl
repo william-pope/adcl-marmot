@@ -4,11 +4,15 @@ include("HJB_utils.jl")
 include("dynamics_models.jl")
 
 # TO-DO: need to fix to make work with 1-d value array
-function plot_HJB_result(value_array, x_path_list, env, veh)
+#   - may have to assemble n=dim value array, should be similar process to 
+function plot_HJB_result(value_array, heatmap_clim, x_path_list, env, veh, sg)
+    # reshape value array into n-dimensional array
+    value_array_m = reshape(value_array, sg.state_grid.cut_counts...)
+
     # plot HJB value function as a heat map
     for k_plot in eachindex(sg.state_grid.cutPoints[3])
         p_k = heatmap(sg.state_grid.cutPoints[1], sg.state_grid.cutPoints[2], 
-                    transpose(value_array[k_plot]), clim=(0,150),
+                    transpose(value_array_m[:,:,k_plot]), clim=(0, heatmap_clim),
                     aspect_ratio=:equal, 
                     size=(800,800),
                     # xlabel="x-axis [m]", ylabel="y-axis [m]", 
@@ -98,54 +102,60 @@ end
 # anim = @animate 
 # gif(anim, algs_path*"HJB-planner/figures/hjb_theta.gif", fps=4)
 
-function plot_HJB_growth(value_array, step, theta_plot, env::Environment, veh::Vehicle)
-    k_plot = find_idx(theta_plot, env.theta_grid) + 1
-
-    p_step = heatmap(env.x_grid, env.y_grid, transpose(value_array[:,:,k_plot]), clim=(0,15),
-                # xlim=(-3.5,5.5),
+function plot_HJB_growth(value_array, heatmap_clim, step, k_plot, env, veh)
+    # reshape value array into n-dimensional array
+    value_array_m = reshape(value_array, sg.state_grid.cut_counts...)
+    
+    # plot HJB value function as a heat map
+    p_step = heatmap(sg.state_grid.cutPoints[1], sg.state_grid.cutPoints[2], 
+                transpose(value_array_m[:,:,k_plot]), clim=(0, heatmap_clim),
                 aspect_ratio=:equal, 
-                size=(750,1000),
+                size=(800,800),
                 # xlabel="x-axis [m]", ylabel="y-axis [m]", 
-                colorbar_title = "time-to-target [s]",
-                legend=:topright,
-                # legend=true, 
-                colorbar=false,
+                # title="HJB Value Function",
+                titlefontsize = 20,
+                legend=false, 
+                # legend=:topright,
                 legend_font_pointsize = 11,
+                colorbar=false,
+                colorbar_title = "time-to-target [s]",
                 top_margin = -30*Plots.mm,
                 bottom_margin = 4*Plots.mm,
                 left_margin = 8*Plots.mm,
                 right_margin = 0*Plots.mm)
 
-    plot_polygon(p_step, env.W, 3, :black, "Workspace")
-    plot_polygon(p_step, env.T_xy, 3, :green, "Target Set")
-    if isempty(env.O_vec) == false
-        plot_polygon(p_step, env.O_vec[1], 3, :red, "Obstacle")
-        for O in env.O_vec
-            plot_polygon(p_step, O, 3, :red, "")
+    plot!(p_step, env.workspace, alpha=0.0, linecolor=:black, linewidth=2, linealpha=1.0, label="Workspace")
+    plot!(p_step, env.goal, alpha=0.0, linecolor=:green, linewidth=2, linealpha=1.0, label="Goal")
+
+    if isempty(env.obstacle_list) == false
+        plot!(p_step, env.obstacle_list[1], alpha=0.0, linecolor=:red, linewidth=2, linealpha=1.0, label="Obstacle")
+
+        for obstacle in env.obstacle_list
+            plot!(p_step, obstacle, alpha=0.0, linecolor=:red, linewidth=2, linealpha=1.0)
         end
     end
 
-    # plot vehicle figure
-    x_pos = env.x_grid[end] + 1.0
-    y_pos = env.y_grid[end]/2
+    # vehicle figure
+    x_pos = sg.state_grid.cutPoints[1][end] + 1.5
+    y_pos = sg.state_grid.cutPoints[2][end]/2  - 0.5
 
-    x_max = x_pos + sqrt((veh.axle_l-veh.ext2axle)^2 + (veh.ext_w/2)^2)
-    y_min = y_pos - sqrt((veh.axle_l-veh.ext2axle)^2 + (veh.ext_w/2)^2)
+    x_max = x_pos + sqrt((veh.axis_to_cent_x + 1/2*veh.body_length)^2 + (veh.axis_to_cent_y + 1/2*veh.body_width)^2)
+    y_min = y_pos - sqrt((veh.axis_to_cent_x + 1/2*veh.body_length)^2 + (veh.axis_to_cent_y + 1/2*veh.body_width)^2)
 
-    x = [x_pos, y_pos, env.theta_grid[k_plot]]
+    x = [x_pos, y_pos, sg.state_grid.cutPoints[3][k_plot]]
     
-    E_arr = pose_to_edges(x, veh)
-    V = [[E_arr[1][1] E_arr[1][2]];
-        [E_arr[2][1] E_arr[2][2]];
-        [E_arr[3][1] E_arr[3][2]];
-        [E_arr[4][1] E_arr[4][2]]]
+    veh_body = state_to_body(x, veh)
         
-    plot!(p_step, [x_max], [y_pos], markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
     plot!(p_step, [x_pos], [y_pos], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
-    plot_polygon(p_step, V, 2, :blue, "Vehicle")
+
+    # plot_polygon(p_step, V, 2, :blue, "Vehicle")
+    plot!(p_step, veh_body, alpha=0.0, linecolor=:blue, linewidth=2, linealpha=1.0, label="Vehicle")
+
+    plot!(p_step, [x_max], [y_pos], markercolor=:white, label="")
+    plot!(p_step, [x_pos], [y_min], markercolor=:white, label="")
 
     # plot step count
-    annotate!(x_pos, y_pos+1.5, text("step:\n$(step-1)", 14))
+    # annotate!(x_pos, y_pos+1.5, text("step:\n$(step-1)", 14))
 
     display(p_step)
 end

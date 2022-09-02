@@ -17,59 +17,41 @@ algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 #   - still need to figure out specifics for Gauss-Seidel flipping
 
 # main function to iteratively calculate continuous value function for HJB using finite difference method (STLC models only)
-function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag)
+function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
     # initialize value_array, value_array, init_array
     value_array, init_array, target_array, obstacle_array = initialize_value_array(sg, env, veh)
     value_array_old = deepcopy(value_array)
-
-    return value_array
-
-    # TO-DO: rewrite Gauss-Seidel mechanism to use new matrix
-    # - should be similar to initialize() use, but need to flip columns in the matrix to do different sweeps
 
     # main function loop
     dval_max = Inf
     solve_step = 1
     gs_step = 1
 
-    while dval_max > dval_tol && solve_step < max_solve_steps
-        # flip rows in idx matrix according to Gauss-Seidel scheme
-        gs_idx_matrix = zeros(Float64, size(sg.grid_idx_matrix))
-        for d in sg.gs_sweep_matrix[:,gs_step]
-            if d == 1
-                gs_idx_matrix[d,:] = reverse(sg.gs_sweep_matrix[d,:])
-            else
-                gs_idx_matrix[d,:] = sg.gs_sweep_matrix[d,:]
-            end
-        end
-
-        for j in 1:sg.num_nodes
-            grid_idx = sg.gs_idx_matrix[:,j]
-            x_ijk = idx_to_state(grid_idx, sg)
+    while dval_max > dval_tol && solve_step <= max_solve_steps
+        for ind_m in sg.ind_gs_array[gs_step]
+            x = sg.state_grid[ind_m...]
+            ind_s = multi2single_ind(ind_m, sg)
 
             if target_array[ind_s] == false && obstacle_array[ind_s] == false
-                # # finite difference method
-                # value_array[i,j,k], init_array[i,j,k] = update_node_value_FDM(value_array, init_array, i, j, k, actions, env, veh, EoM)
-                
-                # semi-Lagrangian method
-                value_array[i,j,k] = update_node_value_SL(x_ijk, value_array, actions, dt_solve, EoM, env, veh, sg)
+                value_array[ind_s] = update_node_value_SL(x, value_array, actions, dt_solve, EoM, env, veh, sg)
             end
         end
         
-        # TO-DO: see if deepcopy() can be removed
-        value_array[:,:,end] = deepcopy(value_array[:,:,1])
-        init_array[:,:,end] = deepcopy(init_array[:,:,1])
+        # TO-DO: see if deepcopy() can be replaced
+        #   - will have to be reformatted for ind_s
+        # value_array[:,:,end] = deepcopy(value_array[:,:,1])
+        # init_array[:,:,end] = deepcopy(init_array[:,:,1])
 
         # compare value_array and value_array to check convergence
         dval = value_array - value_array_old
         dval_max = maximum(abs.(dval))
 
-        # TO-DO: see if deepcopy() can be removed
+        # TO-DO: see if deepcopy() can be replaced
         value_array_old = deepcopy(value_array)
 
-        println("step: ", step, ", dval_max = ", dval_max)
+        println("step: ", solve_step, ", dval_max = ", dval_max)
 
-        if gs_step == 2^sg.state_dim
+        if gs_step == 2^dimensions(sg.state_grid)
             gs_step = 1
         else
             gs_step += 1
@@ -78,9 +60,9 @@ function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve
         solve_step += 1
 
         # plot ---
-        if plot_growth == true
-            theta_plot = 1/2*pi
-            plot_HJB_growth(value_array, step, theta_plot, env, veh)
+        if plot_growth_flag == true
+            k_plot = 28
+            plot_HJB_growth(value_array, heatmap_clim, step, k_plot, env, veh)
         end
     end
 
@@ -103,15 +85,15 @@ end
 #       - is there a more systematic way of doing this than just checking a big list?
 
 # NOTE: may need to make changes to init_array process
-function update_node_value_SL(x_ijk, value_array, actions, dt_solve, EoM, env, veh, sg) 
+function update_node_value_SL(x, value_array, actions, dt_solve, EoM, env, veh, sg) 
     # ISSUE: value array behaves strangely when dt is small (~<= 0.1) (seems unexpected)
 
     qval_min = Inf
     for u in actions
-        cost_p = get_cost(x_ijk, u, dt_solve)
+        cost_p = get_cost(x, u, dt_solve)
 
-        x_p = runge_kutta_4(x_ijk, u, dt_solve, EoM, veh, sg)
-        val_p = interp_value(x_p, value_array, env)
+        x_p = runge_kutta_4(x, u, dt_solve, EoM, veh, sg)
+        val_p = interp_value(x_p, value_array, sg)
 
         qval_u = cost_p + val_p
 
@@ -142,18 +124,20 @@ end
 # TO-DO: ignoring obstacle issues for now, will need to address
 #   - may need to keep track of RIC (kinda like H-J reachability stuff...) in order to track "invalid" nodes
 #   - don't need to check if neighbors are invalid every time, can store during initialization if node borders an obstacle
-function interp_value(x::Vector{Float64}, value_array::Array{Float64, 3}, env::Environment)
-    x_itp = deepcopy(x)
+function interp_value(x, value_array, sg)
+    # x_itp = deepcopy(x)
 
-    # ISSUE: interpolating near boundary has same problem as near obstacles
-    #   - obstacle value should not be treated as valid (but it is...)
+    # # ISSUE: interpolating near boundary has same problem as near obstacles
+    # #   - obstacle value should not be treated as valid (but it is...)
 
-    # adjust x,y within bounds
-    x_itp[1] <= env.x_grid[1] ? x_itp[1] = env.x_grid[1]+1/16*env.h_xy : x_itp[1] = x_itp[1]
-    x_itp[1] >= env.x_grid[end] ? x_itp[1] = env.x_grid[end]-1/16*env.h_xy : x_itp[1] = x_itp[1]
+    # # adjust x,y within bounds
+    # x_itp[1] <= env.x_grid[1] ? x_itp[1] = env.x_grid[1]+1/16*env.h_xy : x_itp[1] = x_itp[1]
+    # x_itp[1] >= env.x_grid[end] ? x_itp[1] = env.x_grid[end]-1/16*env.h_xy : x_itp[1] = x_itp[1]
 
-    x_itp[2] <= env.y_grid[1] ? x_itp[2] = env.y_grid[1]+1/16*env.h_xy : x_itp[2] = x_itp[2]
-    x_itp[2] >= env.y_grid[end] ? x_itp[2] = env.y_grid[end]-1/16*env.h_xy : x_itp[2] = x_itp[2]
+    # x_itp[2] <= env.y_grid[1] ? x_itp[2] = env.y_grid[1]+1/16*env.h_xy : x_itp[2] = x_itp[2]
+    # x_itp[2] >= env.y_grid[end] ? x_itp[2] = env.y_grid[end]-1/16*env.h_xy : x_itp[2] = x_itp[2]
+
+    val_itp = interpolate(sg.state_grid, value_array, x)
 
     return val_itp
 end

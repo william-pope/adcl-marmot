@@ -6,7 +6,7 @@ using GridInterpolations
 
 struct Environment
     workspace::VPolygon    # region
-    obstacle_list::Array{VPolygon}     # list of regions
+    obstacle_list::Array{Any}     # list of regions
     goal::VPolygon     # region
 end
 
@@ -30,13 +30,7 @@ struct StateGrid
     ind_gs_array::Array
 end
 
-function define_environment(env_name)
-    if env_name == "aspen_empty"
-        workspace = VPolygon([[0.0, 0.0], [5.5, 0.0], [5.5, 11.0], [0.0, 11.0]])
-        obstacle_list = []
-        goal = VPolygon([[2.25, 10.0], [3.25, 10.0], [3.25, 11.0], [2.25, 11.0]])
-    end
-
+function define_environment(workspace, obstacle_list, goal)
     env = Environment(workspace, obstacle_list, goal)
     return env
 end
@@ -75,10 +69,10 @@ function define_vehicle(veh_name)
     return veh
 end
 
-
+# TO-DO: catch if state or aciton dimensions violate the chosen EoM
 # a[:,2] = reverse(a[:,2]) -> use for Gauss-Seidel sweeps
-function define_state_grid(state_space, axis_step_sizes, angle_wrap)
-    state_iters = [minimum(axis):axis_step_sizes[i]:maximum(axis) for (i, axis) in enumerate(state_space)]
+function define_state_grid(state_space, dx_sizes, angle_wrap)
+    state_iters = [minimum(axis):dx_sizes[i]:maximum(axis) for (i, axis) in enumerate(state_space)]
     state_grid = RectangleGrid(state_iters...)
 
     # Gauss-Seidel
@@ -110,6 +104,14 @@ function define_state_grid(state_space, axis_step_sizes, angle_wrap)
 
     sg = StateGrid(state_grid, angle_wrap, ind_gs_array)
     return sg
+end
+
+# TO-DO: define action space using Range(a,b,n) type
+function define_action_grid(action_space, du_nums)
+    action_iters = [minimum(axis):du_sizes[i]:maximum(axis) for (i, axis) in enumerate(action_space)]
+    action_grid = RectangleGrid(action_iters...)
+
+    return action_grid
 end
 
 # NOTE: should be able to generalize action/input more, just allowing user to specifiy a discrete (or continuous) set

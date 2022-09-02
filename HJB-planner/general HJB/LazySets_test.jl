@@ -8,9 +8,28 @@ using BenchmarkTools
 #   - collision checking (polygon intersection) will be done in 2-d workspace (using [x, y, theta] for vehicle)
 #   - in() set checking will be done in full n-dim space to check if state is within n-dim goal region, n-dim state space
 
-# # define polygons
+function circle2vpolygon(cent_cir, r_cir)
+    # number of points used to discretize edge of circle
+    pts = 16
+
+    # circle radius is used as midpoint radius for polygon faces (over-approximation)
+    r_poly = r_cir/cos(pi/pts)
+
+    theta_rng = range(0, 2*pi, length=pts+1)
+
+    cir_vertices = [[cent_cir[1] + r_poly*cos(theta), cent_cir[2] + r_poly*sin(theta)] for theta in theta_rng]
+    
+    poly_cir = VPolygon(cir_vertices)
+    return poly_cir
+end
+
+# define polygons
 poly1 = VPolygon([[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]])
 poly2 = VPolygon([[0.5, 0.5], [0.9, 0.5], [0.9, 0.9], [0.5, 0.9]])
+
+# define circles
+cir1 = circle2vpolygon([1.5, 1.3], 0.5)
+cir0 = Ball2([1.5, 1.3], 0.5)
 
 # find intersection of two polygons
 int1 = intersection(poly1, poly2)
@@ -18,12 +37,17 @@ int1 = intersection(poly1, poly2)
 # test if subset
 ss = issubset(poly2, poly1)
 
+# test if disjoint
+dj = isdisjoint(poly1, cir1)
+
 # plotting
 p1 = plot(poly1, aspect_ratio=:equal)
-plot!(p1, poly2)
+# plot!(p1, poly2)
+plot!(p1, cir1)
+plot!(p1, cir0)
 
 display(p1)
-display(ss)
+display(dj)
 
 # vehicle body transformation function
 function state_to_body(x, body)
