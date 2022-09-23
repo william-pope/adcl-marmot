@@ -20,20 +20,20 @@ algs_path = algs_path_mac
 
 # solver params
 solve_HJB_flag = true
-plot_growth_flag = true
-plot_result_flag = true
-heatmap_clim = 10
+plot_growth_flag = false
+plot_value_flag = true
+heatmap_clim = 15
 
 dt_solve = 0.25
-dval_tol = 0.005
+dval_tol = 0.5
 max_solve_steps = 1e3
 
 # planner params
-run_HJB_planner_flag = false
-HJB_path_list = []
+plan_HJB_flag = false
 
 dt_plan = 0.25
 max_plan_steps = 2e3
+
 
 
 # 2) DEFINITIONS --- --- ---
@@ -54,23 +54,29 @@ EoM = bicycle_3d_EoM
 # define state grid
 state_space = [[0.0, 5.5], [0.0, 11.0], [-pi, pi]]
 dx_sizes = [0.25, 0.25, deg2rad(10)]
-angle_wrap = [false, false, true]
+angle_wrap = [false, false, true, false]
 sg = define_state_grid(state_space, dx_sizes, angle_wrap)
 
 # define action set
-action_space = [[-0.75, 1.5], [-0.475, 0.475]]
-du_nums = [2, 3]
-action_grid = define_action_grid(action_space, du_nums)
-# ISSUE: need to differentiate between Dubins car and Reeds-Shepp car somewhere
+action_space = [[1.0], [-0.475, 0.475]]
+du_num_steps = [1, 3]
+action_grid = define_action_grid(action_space, du_num_steps)
 
+# define initial states for paths
+x_0_list = [[2.3, 1.0, deg2rad(90)],
+            [4.8, 3.0, deg2rad(105)],
+            [3.0, 1.2, deg2rad(80)],
+            [1.7, 1.5, deg2rad(165)]]
+
+
+# ProfileView.@profview 
+# SPEED
+#   - 
+# @btime initialize_value_array(sg, env, veh)
 
 # TO-DO: 
 #   - clean up interpolation
-#       - does x_p need to be collision checked when building value array?
-#           - does this add significant runtime to HJB generation?
-#           - need to store info somewhere to not repeat checking
-#           - determine if this is actually helpful before putting time into it
-#       - script works, but not sure if more robust approach needed for obstacle value backups
+#       - all states in grid neighboring an obstacle node should also be treated as an obstacle node
 #   - clean up static types
 #   - test methods for faster action search
 #   - test differential drive dynamics model
@@ -94,11 +100,20 @@ action_grid = define_action_grid(action_space, du_nums)
 #   - solver works with obstacles, solutions look correct
 #   - need to work on action space definition and handling
 
+# STATUS (09/22/2022):
+#   - solver looks good for 4d_v, some issues with convergence
+
+# TO-DO:
+#   ( ) make plotting work
+
+# ISSUE: convergence stalls at dval=0.25 for 4d_v EoM
+#   - wonder if related to grid size? or time step?
+
 # 3) MAIN --- --- ---
 println("\nstart --- --- ---")
 
 if solve_HJB_flag == true    
-    value_array = solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
+    value_array = solve_HJB_PDE(env, veh, EoM, sg, action_grid, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
 
     @save algs_path*"bson/value_array.bson" value_array
     @save algs_path*"bson/env.bson" env
@@ -115,35 +130,30 @@ else
 end
 
 
-# # plan paths to goal
-x_path_list = []
+# plan paths to goal
+if plan_HJB_flag == true
+    x_path_list = []
 
-# x_0_list = [[6.3, 1.0, deg2rad(90)],
-#             [4.8, 3.0, deg2rad(105)],
-#             [3.0, 1.2, deg2rad(80)],
-#             [1.7, 1.5, deg2rad(165)]]
+    for x_0 in x_0_list
+        # println("value at x_0 = ", interp_value(x_0, value_array, env))
 
-# dt_plan = 0.5
+        x_path, u_path, step = plan_HJB_path(x_0, actions, dt_plan, value_array, obstacle_array, max_steps, EoM, env, veh)
+        push!(x_path_list, x_path)
 
-# if plan_HJB == true
-#     max_steps = 5e3
-
-#     for x_0 in x_0_list
-#         println("value at x_0 = ", interp_value(x_0, value_array, env))
-
-#         x_path, u_path, step = plan_HJB_path(x_0, actions, dt_plan, value_array, obstacle_array, max_steps, EoM, env, veh)
-#         push!(x_path_list, x_path)
-
-#         path_time = step*dt_plan
-#         println("path execution time: ", path_time, " sec")
-#     end
-# end
+        # path_time = step*dt_plan
+        # println("path execution time: ", path_time, " sec")
+    end
+end
     
 
 # # 4) PLOTS --- --- ---
 
-if plot_result_flag == true
-    plot_HJB_result(value_array, heatmap_clim, x_path_list, env, veh, sg)
+if plot_value_flag == true
+    plot_HJB_value(value_array, heatmap_clim, env, veh, sg)
+end
+
+if plan_HJB_flag == true
+    plot_HJB_path(x_path_list)
 end
 
 # # @btime HJB_action(x_0, value_array, A, obstacle_array, env, veh)

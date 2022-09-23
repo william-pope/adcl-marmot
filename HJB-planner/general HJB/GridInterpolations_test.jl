@@ -1,6 +1,7 @@
 # GridInterp test
 
 using GridInterpolations
+using StaticArrays
 
 # rectangular grid can be defined in n-dimensions
 # NOTE: grid definition not able to handle backwards arrays

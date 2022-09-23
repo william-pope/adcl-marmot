@@ -13,12 +13,11 @@ include("HJB_plotting.jl")
 algs_path_mac = "/value_arraysers/willpope/Desktop/Research/marmot-algs/"
 algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 
-# STATUS: GridInterp.jl looks good to go, just need to rework around it
-#   - still need to figure out specifics for Gauss-Seidel flipping
+# TO-DO: need to store optimal actions during solve
 
 # main function to iteratively calculate continuous value function for HJB using finite difference method (STLC models only)
-function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
-    # initialize value_array, value_array, init_array
+function solve_HJB_PDE(env, veh, EoM, sg, action_grid, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
+    # initialize value_array, init_array, ...
     value_array, init_array, target_array, obstacle_array = initialize_value_array(sg, env, veh)
     value_array_old = deepcopy(value_array)
 
@@ -27,19 +26,24 @@ function solve_HJB_PDE(env, veh, EoM, sg, actions, dt_solve, dval_tol, max_solve
     solve_step = 1
     gs_step = 1
 
+    # SPEED:
+    #   - woth deepcopy(value_array) -> 39.7 s, 292,707,617 alloc
+    #   - with old[ind_s] = new[ind_s] -> 39.7 s, 293,412,717 alloc (basically no change)
+    #   - need to make data_array static
+
     while dval_max > dval_tol && solve_step <= max_solve_steps
         for ind_m in sg.ind_gs_array[gs_step]
             x = sg.state_grid[ind_m...]
             ind_s = multi2single_ind(ind_m, sg)
 
             if target_array[ind_s] == false && obstacle_array[ind_s] == false
-                value_array[ind_s] = update_node_value_SL(x, value_array, actions, dt_solve, EoM, env, veh, sg)
+                # value_array_old[ind_s] = value_array[ind_s]
+                value_array[ind_s] = update_node_value_SL(x, value_array, action_grid, dt_solve, EoM, env, veh, sg)
             end
         end
         
-        # TO-DO: see if deepcopy() can be replaced
-        #   - will have to be reformatted for ind_s
-        # value_array[:,:,end] = deepcopy(value_array[:,:,1])
+        # TO-DO: see if this is needed for angle wrap
+        # value_array[:,:,end] = value_array[:,:,1]
         # init_array[:,:,end] = deepcopy(init_array[:,:,1])
 
         # compare value_array and value_array to check convergence
@@ -85,11 +89,11 @@ end
 #       - is there a more systematic way of doing this than just checking a big list?
 
 # NOTE: may need to make changes to init_array process
-function update_node_value_SL(x, value_array, actions, dt_solve, EoM, env, veh, sg) 
+function update_node_value_SL(x, value_array, action_grid, dt_solve, EoM, env, veh, sg) 
     # ISSUE: value array behaves strangely when dt is small (~<= 0.1) (seems unexpected)
 
     qval_min = Inf
-    for u in actions
+    for u in action_grid
         cost_p = get_cost(x, u, dt_solve)
 
         x_p = runge_kutta_4(x, u, dt_solve, EoM, veh, sg)
@@ -157,6 +161,7 @@ function initialize_value_array(sg, env, veh)
 
         # println(ind_m, " -> ", ind_s, " -> ", x)
 
+        # SPEED: in_obstacle_set() is horrible for performance
         if in_workspace(x, env, veh) == false || in_obstacle_set(x, env, veh) == true
             value_array[ind_s] = 1000.0
             init_array[ind_s] = false

@@ -1,6 +1,5 @@
 # HJB_definition_functions.jl
 
-using DomainSets
 using LazySets
 using GridInterpolations
 
@@ -11,6 +10,7 @@ struct Environment
 end
 
 # ISSUE: how will this struct work for non-bicycle model vehicles?
+#   - in general sense, need a function to map vehicle state to a LazySets polygon for collision/goal checking
 struct Vehicle
     v_range::Array{Float64}     # [m/s]
     phi_range::Array{Float64}   # [rad]
@@ -69,8 +69,7 @@ function define_vehicle(veh_name)
     return veh
 end
 
-# TO-DO: catch if state or aciton dimensions violate the chosen EoM
-# a[:,2] = reverse(a[:,2]) -> use for Gauss-Seidel sweeps
+# TO-DO: catch if state or action dimensions violate the chosen EoM
 function define_state_grid(state_space, dx_sizes, angle_wrap)
     state_iters = [minimum(axis):dx_sizes[i]:maximum(axis) for (i, axis) in enumerate(state_space)]
     state_grid = RectangleGrid(state_iters...)
@@ -106,41 +105,9 @@ function define_state_grid(state_space, dx_sizes, angle_wrap)
     return sg
 end
 
-# TO-DO: define action space using Range(a,b,n) type
-function define_action_grid(action_space, du_nums)
-    action_iters = [minimum(axis):du_sizes[i]:maximum(axis) for (i, axis) in enumerate(action_space)]
+function define_action_grid(action_space, du_num_steps)
+    action_iters = [range(minimum(axis), maximum(axis), du_num_steps[i]) for (i, axis) in enumerate(action_space)]
     action_grid = RectangleGrid(action_iters...)
 
     return action_grid
-end
-
-# NOTE: should be able to generalize action/input more, just allowing user to specifiy a discrete (or continuous) set
-#   - would this be better? probably
-function define_actions(veh, EoM)
-    v_steps = 2
-    phi_steps = 5
-    a_steps = 2
-    xi_steps = 5
-
-    v_set = collect(range(veh.v_range[1], veh.v_range[2], v_steps))
-    phi_set = collect(range(veh.phi_range[1], veh.phi_range[2], phi_steps))
-    a_set = collect(range(veh.a_range[1], veh.a_range[2], a_steps))
-    xi_set = collect(range(veh.xi_range[1], veh.xi_range[2], xi_steps))
-
-    # TO-DO: need to make these into a list of all possible combinations (need list comprehension syntax)
-    if EoM == bicycle_3d_EoM
-        action_list = [v_set, phi_set]
-    elseif EoM == bicycle_4d_v_EoM
-        action_list = [a_set, phi_set]
-    elseif EoM == bicycle_4d_phi_EoM
-        action_list = [v_set, xi_set]
-    elseif EoM == bicycle_5d_EoM
-        action_list = [a_set, xi_set]
-    end
-
-    actions = [[a1, a2] for a1 in action_list[1], a2 in action_list[2]]     # NOTE: probably a better way to do this
-    actions = reshape(actions, (length(actions),1))
-    sort!(actions, dims=1)
-
-    return actions
 end

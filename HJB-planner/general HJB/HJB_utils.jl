@@ -38,12 +38,15 @@ end
 # ISSUE: looks like can't use isdisjoint() between VPolygon (vehicle) and Ball2 (obstacle)
 #   - intersection() doesn't work either...
 #   - may be able to just convert circles to VPolygons
+
+# ISSUE: super slow (6090 alloc???)
+
 # obstacle set checker
 function in_obstacle_set(x, env, veh)
     veh_body = state_to_body(x, veh)
     
     for obstacle in env.obstacle_list
-        if isdisjoint(veh_body, obstacle) == false
+        if isempty(intersection(veh_body, obstacle)) == false
             return true
         end
     end
@@ -86,7 +89,7 @@ end
 
 function circle2vpolygon(cent_cir, r_cir)
     # number of points used to discretize edge of circle
-    pts = 16
+    pts = 12
 
     # circle radius is used as midpoint radius for polygon faces (over-approximation)
     r_poly = r_cir/cos(pi/pts)
