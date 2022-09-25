@@ -12,10 +12,6 @@ end
 # ISSUE: how will this struct work for non-bicycle model vehicles?
 #   - in general sense, need a function to map vehicle state to a LazySets polygon for collision/goal checking
 struct Vehicle
-    v_range::Array{Float64}     # [m/s]
-    phi_range::Array{Float64}   # [rad]
-    a_range::Array{Float64}     # [m/s^2]
-    xi_range::Array{Float64}    # [rad/s]
     wheelbase::Float64      # wheelbase [m]
     body_length::Float64    # length [m]
     body_width::Float64     # width [m]
@@ -30,6 +26,10 @@ struct StateGrid
     ind_gs_array::Array
 end
 
+struct ActionGrid
+    action_grid::RectangleGrid
+end
+
 function define_environment(workspace, obstacle_list, goal)
     env = Environment(workspace, obstacle_list, goal)
     return env
@@ -37,10 +37,6 @@ end
 
 function define_vehicle(veh_name)
     if veh_name == "marmot"
-        v_range = [-0.75, 1.5]
-        phi_range = [-0.475, 0.475]
-        a_range = [-1.0, 1.0]
-        xi_range = [-3.0, 3.0]
         wheelbase = 0.324
         body_length = 0.5207
         body_width = 0.2762
@@ -48,10 +44,6 @@ function define_vehicle(veh_name)
         axis_to_cent_y = 0.0
 
     elseif veh_name == "unit_car"
-        v_range = [-0.5, 1.0]
-        phi_range = [-0.5, 0.5]
-        a_range = [-1.0, 1.0]
-        xi_range = [-5.0, 5.0]
         wheelbase = 0.5
         body_length = 0.75
         body_width = 0.375
@@ -65,7 +57,7 @@ function define_vehicle(veh_name)
     y0_max = axis_to_cent_y + 1/2*body_width
     origin_body = VPolygon([[x0_min, y0_min], [x0_max, y0_min], [x0_max, y0_max], [x0_min, y0_max]])
 
-    veh = Vehicle(v_range, phi_range, a_range, xi_range, wheelbase, body_length, body_width, axis_to_cent_x, axis_to_cent_y, origin_body)
+    veh = Vehicle(wheelbase, body_length, body_width, axis_to_cent_x, axis_to_cent_y, origin_body)
     return veh
 end
 
@@ -109,5 +101,6 @@ function define_action_grid(action_space, du_num_steps)
     action_iters = [range(minimum(axis), maximum(axis), du_num_steps[i]) for (i, axis) in enumerate(action_space)]
     action_grid = RectangleGrid(action_iters...)
 
-    return action_grid
+    ag = ActionGrid(action_grid)
+    return ag
 end

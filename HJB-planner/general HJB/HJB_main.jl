@@ -13,6 +13,7 @@ include("HJB_utils.jl")
 include("dynamics_models.jl")
 include("HJB_plotting.jl")
 
+
 # 1) GLOBAL PARAMETERS --- --- ---
 algs_path_mac = "./"
 algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
@@ -20,20 +21,19 @@ algs_path = algs_path_mac
 
 # solver params
 solve_HJB_flag = true
-plot_growth_flag = false
+plot_growth_flag = true
 plot_value_flag = true
 heatmap_clim = 15
 
-dt_solve = 0.25
+dt_solve = 0.5
 dval_tol = 0.5
-max_solve_steps = 1e3
+max_solve_steps = 50
 
 # planner params
-plan_HJB_flag = false
+plan_HJB_flag = true
 
-dt_plan = 0.25
+dt_plan = 0.5
 max_plan_steps = 2e3
-
 
 
 # 2) DEFINITIONS --- --- ---
@@ -53,20 +53,20 @@ EoM = bicycle_3d_EoM
 
 # define state grid
 state_space = [[0.0, 5.5], [0.0, 11.0], [-pi, pi]]
-dx_sizes = [0.25, 0.25, deg2rad(10)]
-angle_wrap = [false, false, true, false]
+dx_sizes = [0.25, 0.25, deg2rad(15)]
+angle_wrap = [false, false, true]
 sg = define_state_grid(state_space, dx_sizes, angle_wrap)
 
 # define action set
-action_space = [[1.0], [-0.475, 0.475]]
-du_num_steps = [1, 3]
-action_grid = define_action_grid(action_space, du_num_steps)
+action_space = [[-1.0, 1.0], [-0.475, 0.475]]
+du_num_steps = [3, 5]
+ag = define_action_grid(action_space, du_num_steps)
 
 # define initial states for paths
-x_0_list = [[2.3, 1.0, deg2rad(90)],
-            [4.8, 3.0, deg2rad(105)],
-            [3.0, 1.2, deg2rad(80)],
-            [1.7, 1.5, deg2rad(165)]]
+x_0_list = [[3.3, 1.0, deg2rad(120)]]#,
+            # [4.8, 2.5, deg2rad(90)],
+            # [3.0, 1.2, deg2rad(80)],
+            # [1.7, 1.5, deg2rad(165)]]
 
 
 # ProfileView.@profview 
@@ -109,11 +109,12 @@ x_0_list = [[2.3, 1.0, deg2rad(90)],
 # ISSUE: convergence stalls at dval=0.25 for 4d_v EoM
 #   - wonder if related to grid size? or time step?
 
+
 # 3) MAIN --- --- ---
 println("\nstart --- --- ---")
 
 if solve_HJB_flag == true    
-    value_array = solve_HJB_PDE(env, veh, EoM, sg, action_grid, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
+    value_array, action_ind_array = solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
 
     @save algs_path*"bson/value_array.bson" value_array
     @save algs_path*"bson/env.bson" env
@@ -129,7 +130,6 @@ else
     @load algs_path*"bson/veh.bson" veh
 end
 
-
 # plan paths to goal
 if plan_HJB_flag == true
     x_path_list = []
@@ -137,7 +137,9 @@ if plan_HJB_flag == true
     for x_0 in x_0_list
         # println("value at x_0 = ", interp_value(x_0, value_array, env))
 
-        x_path, u_path, step = plan_HJB_path(x_0, actions, dt_plan, value_array, obstacle_array, max_steps, EoM, env, veh)
+        x_path, u_path, step = plan_HJB_path(x_0, dt_plan, value_array, action_ind_array, max_plan_steps, EoM, env, veh, sg, ag)
+        display(u_path)
+        
         push!(x_path_list, x_path)
 
         # path_time = step*dt_plan

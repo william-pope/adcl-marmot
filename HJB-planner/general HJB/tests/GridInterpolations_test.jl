@@ -6,9 +6,9 @@ using StaticArrays
 # rectangular grid can be defined in n-dimensions
 # NOTE: grid definition not able to handle backwards arrays
 state_grid = RectangleGrid(0:1, 0:1, 0:1) 
-value_array = [8., 1., 6., 3., 5., 7., 4., 9.]
+value_array = [Inf, 1., 6., 3., 5., 7., 4., 9.]
 
-x = [1.5, 1, 1]
+x = [0.9, 0.9, 0.9]
 @show interpolate(state_grid, value_array, x)
 
 # grid data listed as [1,1], [2,1], [3,1], [1,2], [2,2], [3,2], ...
@@ -33,4 +33,4 @@ lens = [3, 4]
 # @show ind_s = multi2single_2(ind_m, lens)
 
 # testing 1-d data array -> n-d data array
-value_array_m = reshape(value_array, state_grid.cut_counts...)
+# value_array_m = reshape(value_array, state_grid.cut_counts...)

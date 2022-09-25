@@ -15,10 +15,10 @@ algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 
 # TO-DO: need to store optimal actions during solve
 
-# main function to iteratively calculate continuous value function for HJB using finite difference method (STLC models only)
-function solve_HJB_PDE(env, veh, EoM, sg, action_grid, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
+# main function to iteratively calculate HJB value function
+function solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
     # initialize value_array, init_array, ...
-    value_array, init_array, target_array, obstacle_array = initialize_value_array(sg, env, veh)
+    value_array, action_ind_array, init_array, target_array, obstacle_array = initialize_value_array(sg, env, veh)
     value_array_old = deepcopy(value_array)
 
     # main function loop
@@ -27,18 +27,19 @@ function solve_HJB_PDE(env, veh, EoM, sg, action_grid, dt_solve, dval_tol, max_s
     gs_step = 1
 
     # SPEED:
-    #   - woth deepcopy(value_array) -> 39.7 s, 292,707,617 alloc
+    #   - with deepcopy(value_array) -> 39.7 s, 292,707,617 alloc
     #   - with old[ind_s] = new[ind_s] -> 39.7 s, 293,412,717 alloc (basically no change)
     #   - need to make data_array static
 
-    while dval_max > dval_tol && solve_step <= max_solve_steps
+    # dval_max > dval_tol && 
+    while solve_step <= max_solve_steps
         for ind_m in sg.ind_gs_array[gs_step]
             x = sg.state_grid[ind_m...]
             ind_s = multi2single_ind(ind_m, sg)
 
             if target_array[ind_s] == false && obstacle_array[ind_s] == false
                 # value_array_old[ind_s] = value_array[ind_s]
-                value_array[ind_s] = update_node_value_SL(x, value_array, action_grid, dt_solve, EoM, env, veh, sg)
+                value_array[ind_s], action_ind_array[ind_s] = update_node_value_SL(x, value_array, dt_solve, EoM, env, veh, sg, ag)
             end
         end
         
@@ -65,12 +66,12 @@ function solve_HJB_PDE(env, veh, EoM, sg, action_grid, dt_solve, dval_tol, max_s
 
         # plot ---
         if plot_growth_flag == true
-            k_plot = 28
+            k_plot = 19
             plot_HJB_growth(value_array, heatmap_clim, step, k_plot, env, veh)
         end
     end
 
-    return value_array
+    return value_array, action_ind_array
 end
 
 # use modules
@@ -89,36 +90,34 @@ end
 #       - is there a more systematic way of doing this than just checking a big list?
 
 # NOTE: may need to make changes to init_array process
-function update_node_value_SL(x, value_array, action_grid, dt_solve, EoM, env, veh, sg) 
+function update_node_value_SL(x, value_array, dt_solve, EoM, env, veh, sg, ag) 
     # ISSUE: value array behaves strangely when dt is small (~<= 0.1) (seems unexpected)
 
     qval_min = Inf
-    for u in action_grid
-        cost_p = get_cost(x, u, dt_solve)
+    ia_opt_ijk = 1
 
-        x_p = runge_kutta_4(x, u, dt_solve, EoM, veh, sg)
+    for ia in 1:length(ag.action_grid)
+        a = ag.action_grid[ia]
+
+        cost_p = get_cost(x, a, dt_solve)
+
+        x_p = runge_kutta_4(x, a, dt_solve, EoM, veh, sg)
         val_p = interp_value(x_p, value_array, sg)
 
-        qval_u = cost_p + val_p
+        qval_a = cost_p + val_p
 
-        # # implements obstacle checking for exact propagated state
-        # if in_workspace(x_p, env, veh) == true && in_obstacle_set(x_p, env, veh) == false
-        #     val_p = interp_value(x_p, value_array, env)
-        # else
-        #     val_p = 1000.0
-        # end
-
-        if qval_u < qval_min
-            qval_min = qval_u
+        if qval_a < qval_min
+            qval_min = qval_a
+            ia_opt_ijk = ia
         end
     end
 
     val_ijk = qval_min
 
-    return val_ijk
+    return val_ijk, ia_opt_ijk
 end
 
-function get_cost(x_k, u_k, dt_solve)
+function get_cost(x_k, a_k, dt_solve)
     cost_k = dt_solve
 
     return cost_k
@@ -129,17 +128,13 @@ end
 #   - may need to keep track of RIC (kinda like H-J reachability stuff...) in order to track "invalid" nodes
 #   - don't need to check if neighbors are invalid every time, can store during initialization if node borders an obstacle
 function interp_value(x, value_array, sg)
-    # x_itp = deepcopy(x)
-
-    # # ISSUE: interpolating near boundary has same problem as near obstacles
-    # #   - obstacle value should not be treated as valid (but it is...)
-
-    # # adjust x,y within bounds
-    # x_itp[1] <= env.x_grid[1] ? x_itp[1] = env.x_grid[1]+1/16*env.h_xy : x_itp[1] = x_itp[1]
-    # x_itp[1] >= env.x_grid[end] ? x_itp[1] = env.x_grid[end]-1/16*env.h_xy : x_itp[1] = x_itp[1]
-
-    # x_itp[2] <= env.y_grid[1] ? x_itp[2] = env.y_grid[1]+1/16*env.h_xy : x_itp[2] = x_itp[2]
-    # x_itp[2] >= env.y_grid[end] ? x_itp[2] = env.y_grid[end]-1/16*env.h_xy : x_itp[2] = x_itp[2]
+    # check if current state is within state space
+    for d in eachindex(x)
+        if x[d] < sg.state_grid.cutPoints[d][1] || x[d] > sg.state_grid.cutPoints[d][end]
+            val_itp = 1000.0
+            return val_itp
+        end
+    end
 
     val_itp = interpolate(sg.state_grid, value_array, x)
 
@@ -151,6 +146,7 @@ function initialize_value_array(sg, env, veh)
     # TO-DO: need to figure out indexing for data arrays
     #   - if data array has to be 1-d, can write some equation as f(ind) to calc 1-d ind
     value_array = zeros(Float64, length(sg.state_grid))
+    action_ind_array = zeros(Int, length(sg.state_grid))
     init_array = zeros(Bool, length(sg.state_grid))
     target_array = zeros(Bool, length(sg.state_grid))
     obstacle_array = zeros(Bool, length(sg.state_grid))
@@ -163,20 +159,22 @@ function initialize_value_array(sg, env, veh)
 
         # SPEED: in_obstacle_set() is horrible for performance
         if in_workspace(x, env, veh) == false || in_obstacle_set(x, env, veh) == true
-            value_array[ind_s] = 1000.0
+            value_array[ind_s] = 1e5
             init_array[ind_s] = false
             obstacle_array[ind_s] = true
+        
         elseif in_target_set(x, env, veh) == true
             value_array[ind_s] = 0.0
             init_array[ind_s] = true
             target_array[ind_s] = true
+        
         else
-            value_array[ind_s] = 100.0    # TO-DO: make 1000.0
+            value_array[ind_s] = 100.0   # TO-DO: make 1000.0
             init_array[ind_s] = false
             target_array[ind_s] = false
             obstacle_array[ind_s] = false
         end
     end
 
-    return value_array, init_array, target_array, obstacle_array
+    return value_array, action_ind_array, init_array, target_array, obstacle_array
 end

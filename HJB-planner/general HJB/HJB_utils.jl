@@ -24,6 +24,11 @@ function runge_kutta_4(x_k::Vector{Float64}, u_k::Vector{Float64}, dt, EoM, veh,
     return x_k1
 end
 
+# TO-DO: add component to check if state is within the state_grid
+#   - will this fix everything? or will action planner still try to go faster?
+#   - need to make sure interpolate() returns bad values when outside workspace
+#   - (!): don't think it's fully fixed
+
 # workspace checker
 function in_workspace(x, env, veh)
     veh_body = state_to_body(x, veh)
@@ -35,9 +40,6 @@ function in_workspace(x, env, veh)
     return false
 end
 
-# ISSUE: looks like can't use isdisjoint() between VPolygon (vehicle) and Ball2 (obstacle)
-#   - intersection() doesn't work either...
-#   - may be able to just convert circles to VPolygons
 
 # ISSUE: super slow (6090 alloc???)
 
@@ -61,7 +63,7 @@ function in_target_set(x, env::Environment, veh::Vehicle)
     if issubset(veh_body, env.goal)
         return true
     end
-        
+
     return false
 end
 

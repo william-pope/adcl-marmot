@@ -134,30 +134,43 @@ end
 # gif(anim_value_array, algs_path*"HJB-planner/figures/hjb_growth.gif", fps=3)
 
 function plot_HJB_path(x_path_list)
-    p_path = plot()
+    p_path = plot(aspect_ratio=:equal, 
+                size=(800,800))
+
+    plot!(p_path, env.workspace, alpha=0.0, linecolor=:black, linewidth=2, linealpha=1.0, label="Workspace")
+    plot!(p_path, env.goal, alpha=0.0, linecolor=:green, linewidth=2, linealpha=1.0, label="Goal")
+
+    if isempty(env.obstacle_list) == false
+        plot!(p_path, env.obstacle_list[1], alpha=0.0, linecolor=:red, linewidth=2, linealpha=1.0, label="Obstacle")
+
+        for obstacle in env.obstacle_list
+            plot!(p_path, obstacle, alpha=0.0, linecolor=:red, linewidth=2, linealpha=1.0)
+        end
+    end
 
     for x_path in x_path_list
         # path
         plot!(p_path, getindex.(x_path,1), getindex.(x_path,2),
-            linewidth = 2, linecolor=:white,
+            # linez=getindex.(x_path,4),    
+            linewidth = 2,
             label="")
 
         # start position
         plot!(p_path, [x_path[1][1]], [x_path[1][2]], 
-            markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, 
+            markershape=:circle, markersize=3, markerstrokewidth=0, 
             label="")
 
         veh_body = state_to_body(x_path[1], veh)
-        plot!(p_path, veh_body, alpha=0.0, linecolor=:white, 
+        plot!(p_path, veh_body, alpha=0.0,
             linewidth=2, linealpha=1.0, label="")
 
         # end position
         plot!(p_path, [x_path[end][1]], [x_path[end][2]], 
-            markercolor=:white, markershape=:circle, markersize=3, markerstrokewidth=0, 
+            markershape=:circle, markersize=3, markerstrokewidth=0, 
             label="")
 
         veh_body = state_to_body(x_path[end], veh)
-        plot!(p_path, veh_body, alpha=0.0, linecolor=:white, 
+        plot!(p_path, veh_body, alpha=0.0, 
             linewidth=2, linealpha=1.0, label="")
     end
 
