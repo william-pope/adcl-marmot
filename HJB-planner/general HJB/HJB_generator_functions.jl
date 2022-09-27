@@ -13,12 +13,10 @@ include("HJB_plotting.jl")
 algs_path_mac = "/value_arraysers/willpope/Desktop/Research/marmot-algs/"
 algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 
-# TO-DO: need to store optimal actions during solve
-
 # main function to iteratively calculate HJB value function
 function solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
-    # initialize value_array, init_array, ...
-    value_array, action_ind_array, init_array, target_array, obstacle_array = initialize_value_array(sg, env, veh)
+    # initialize data arrays
+    value_array, opt_ia_array, set_array = initialize_value_array(sg, env, veh)
     value_array_old = deepcopy(value_array)
 
     # main function loop
@@ -31,15 +29,15 @@ function solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, dval_tol, max_solve_step
     #   - with old[ind_s] = new[ind_s] -> 39.7 s, 293,412,717 alloc (basically no change)
     #   - need to make data_array static
 
-    # dval_max > dval_tol && 
-    while solve_step <= max_solve_steps
+    while dval_max > dval_tol && solve_step <= max_solve_steps
         for ind_m in sg.ind_gs_array[gs_step]
             x = sg.state_grid[ind_m...]
             ind_s = multi2single_ind(ind_m, sg)
 
-            if target_array[ind_s] == false && obstacle_array[ind_s] == false
+            # if target_array[ind_s] == false && obstacle_array[ind_s] == false
+            if set_array[ind_s] == 2
                 # value_array_old[ind_s] = value_array[ind_s]
-                value_array[ind_s], action_ind_array[ind_s] = update_node_value_SL(x, value_array, dt_solve, EoM, env, veh, sg, ag)
+                value_array[ind_s], opt_ia_array[ind_s] = update_node_value_SL(x, value_array, dt_solve, EoM, env, veh, sg, ag)
             end
         end
         
@@ -71,7 +69,7 @@ function solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, dval_tol, max_solve_step
         end
     end
 
-    return value_array, action_ind_array
+    return value_array, opt_ia_array, set_array
 end
 
 # use modules
@@ -113,7 +111,7 @@ function update_node_value_SL(x, value_array, dt_solve, EoM, env, veh, sg, ag)
     end
 
     val_ijk = qval_min
-
+   
     return val_ijk, ia_opt_ijk
 end
 
@@ -131,7 +129,7 @@ function interp_value(x, value_array, sg)
     # check if current state is within state space
     for d in eachindex(x)
         if x[d] < sg.state_grid.cutPoints[d][1] || x[d] > sg.state_grid.cutPoints[d][end]
-            val_itp = 1000.0
+            val_itp = 1e5
             return val_itp
         end
     end
@@ -143,38 +141,48 @@ end
 
 # initialize value approximations
 function initialize_value_array(sg, env, veh)
-    # TO-DO: need to figure out indexing for data arrays
-    #   - if data array has to be 1-d, can write some equation as f(ind) to calc 1-d ind
     value_array = zeros(Float64, length(sg.state_grid))
-    action_ind_array = zeros(Int, length(sg.state_grid))
-    init_array = zeros(Bool, length(sg.state_grid))
-    target_array = zeros(Bool, length(sg.state_grid))
-    obstacle_array = zeros(Bool, length(sg.state_grid))
+    opt_ia_array = zeros(Int, length(sg.state_grid))
+    set_array = zeros(Int, length(sg.state_grid))
 
     for ind_m in sg.ind_gs_array[1]
         x = sg.state_grid[ind_m...]
         ind_s = multi2single_ind(ind_m, sg)
 
-        # println(ind_m, " -> ", ind_s, " -> ", x)
-
         # SPEED: in_obstacle_set() is horrible for performance
         if in_workspace(x, env, veh) == false || in_obstacle_set(x, env, veh) == true
             value_array[ind_s] = 1e5
-            init_array[ind_s] = false
-            obstacle_array[ind_s] = true
+            set_array[ind_s] = 0
         
         elseif in_target_set(x, env, veh) == true
             value_array[ind_s] = 0.0
-            init_array[ind_s] = true
-            target_array[ind_s] = true
+            set_array[ind_s] = 1
         
         else
-            value_array[ind_s] = 100.0   # TO-DO: make 1000.0
-            init_array[ind_s] = false
-            target_array[ind_s] = false
-            obstacle_array[ind_s] = false
+            value_array[ind_s] = 1e5
+            set_array[ind_s] = 2
         end
     end
 
-    return value_array, action_ind_array, init_array, target_array, obstacle_array
+    return value_array, opt_ia_array, set_array
 end
+
+# dval_peaks = findall(dval .== maximum(dval))
+        # for ind_s in dval_peaks
+        #     x = ind2x(sg.state_grid, ind_s)
+        #     println(x, ": ", value_array_old[ind_s], " -> ", value_array[ind_s])
+        # end
+
+        # println("num peaks = ", length(dval_peaks))
+        # println("")
+
+ #=
+    set_ijk = 
+    - if all forward states x_p are fully obstacle (3) or unsafe (4) -> unsafe set (4)
+    - if all forward states x_p are fully target (1) or safe (2) -> safe set (2)
+    - need to figure out how to pull surrounding node values from GridInterp
+    - maybe not a great idea, there's some tricky issues with grid sizing and interpolation
+
+    neighbor_ind, _ = interpolants(state_grid, x)
+    set_array[neighbor_ind]
+    =#

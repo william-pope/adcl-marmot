@@ -20,14 +20,14 @@ algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 algs_path = algs_path_mac
 
 # solver params
-solve_HJB_flag = true
-plot_growth_flag = true
-plot_value_flag = true
+solve_HJB_flag = false
+plot_growth_flag = false
+plot_value_flag = false
 heatmap_clim = 15
 
 dt_solve = 0.5
-dval_tol = 0.5
-max_solve_steps = 50
+dval_tol = 0.01
+max_solve_steps = 120
 
 # planner params
 plan_HJB_flag = true
@@ -42,31 +42,33 @@ workspace = VPolygon([[0.0, 0.0], [5.5, 0.0], [5.5, 11.0], [0.0, 11.0]])
 obstacle_list = [circle2vpolygon([1.5, 3.0], 0.5), 
                 circle2vpolygon([2.7, 7.5], 0.5),
                 circle2vpolygon([3.9, 4.8], 0.5)]
-goal = VPolygon([[2.25, 10.0], [3.25, 10.0], [3.25, 11.0], [2.25, 11.0]])
+goal = VPolygon([[2.125, 9.75], [3.375, 9.75], [3.375, 11.0], [2.125, 11.0]])
 env = define_environment(workspace, obstacle_list, goal)
 
 # define vehicle and dynamics
-veh_name = "marmot"
-veh = define_vehicle(veh_name)
+wheelbase = 0.324
+body_dims = [0.5207, 0.2762]
+origin_to_cent = [0.1715, 0.0]
+veh = define_vehicle(wheelbase, body_dims, origin_to_cent)
 
 EoM = bicycle_3d_EoM
 
 # define state grid
 state_space = [[0.0, 5.5], [0.0, 11.0], [-pi, pi]]
-dx_sizes = [0.25, 0.25, deg2rad(15)]
+dx_sizes = [0.2, 0.2, deg2rad(15)]
 angle_wrap = [false, false, true]
 sg = define_state_grid(state_space, dx_sizes, angle_wrap)
 
 # define action set
-action_space = [[-1.0, 1.0], [-0.475, 0.475]]
-du_num_steps = [3, 5]
+action_space = [[1.0], [-0.475, 0.475]]
+du_num_steps = [1, 5]
 ag = define_action_grid(action_space, du_num_steps)
 
 # define initial states for paths
-x_0_list = [[3.3, 1.0, deg2rad(120)]]#,
-            # [4.8, 2.5, deg2rad(90)],
-            # [3.0, 1.2, deg2rad(80)],
-            # [1.7, 1.5, deg2rad(165)]]
+x_0_list = [[2.8, 0.8, deg2rad(90)],
+            [4.1, 1.7, deg2rad(120)],
+            [4.8, 2.5, deg2rad(95)],
+            [1.7, 1.5, deg2rad(165)]]
 
 
 # ProfileView.@profview 
@@ -103,20 +105,15 @@ x_0_list = [[3.3, 1.0, deg2rad(120)]]#,
 # STATUS (09/22/2022):
 #   - solver looks good for 4d_v, some issues with convergence
 
-# TO-DO:
-#   ( ) make plotting work
-
-# ISSUE: convergence stalls at dval=0.25 for 4d_v EoM
-#   - wonder if related to grid size? or time step?
-
 
 # 3) MAIN --- --- ---
 println("\nstart --- --- ---")
 
 if solve_HJB_flag == true    
-    value_array, action_ind_array = solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
+    value_array, opt_ia_array, set_array = solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
 
     @save algs_path*"bson/value_array.bson" value_array
+    @save algs_path*"bson/opt_ia_array.bson" opt_ia_array
     @save algs_path*"bson/env.bson" env
     @save algs_path*"bson/veh.bson" veh
 
@@ -126,9 +123,22 @@ if solve_HJB_flag == true
     # @save algs_path*"bson/env.bson" actions
 else
     @load algs_path*"bson/value_array.bson" value_array
+    @load algs_path*"bson/opt_ia_array.bson" opt_ia_array
     @load algs_path*"bson/env.bson" env
     @load algs_path*"bson/veh.bson" veh
 end
+
+# HJB_policy 
+#   -> 230.114 us (full path planner, 3 actions)
+#   -> 430.891 us (full path planner, 9 actions)
+#   -> 596.315 us (full path planner, 15 actions)
+# fast_policy (no safety check)
+#   -> 127.109 us (full path planner, 3 actions)
+#   -> 119.857 us (full path planner, 9 actions)
+#   -> 121.070 us (full path planner, 15 actions)
+
+# x_0 = x_0_list[1]
+# @btime x_path, u_path, step = plan_HJB_path(x_0, dt_plan, value_array, opt_ia_array, max_plan_steps, EoM, env, veh, sg, ag)
 
 # plan paths to goal
 if plan_HJB_flag == true
@@ -137,7 +147,7 @@ if plan_HJB_flag == true
     for x_0 in x_0_list
         # println("value at x_0 = ", interp_value(x_0, value_array, env))
 
-        x_path, u_path, step = plan_HJB_path(x_0, dt_plan, value_array, action_ind_array, max_plan_steps, EoM, env, veh, sg, ag)
+        x_path, u_path, step = plan_HJB_path(x_0, dt_plan, value_array, opt_ia_array, max_plan_steps, EoM, env, veh, sg, ag)
         display(u_path)
         
         push!(x_path_list, x_path)

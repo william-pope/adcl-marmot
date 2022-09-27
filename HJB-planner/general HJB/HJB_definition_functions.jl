@@ -9,14 +9,10 @@ struct Environment
     goal::VPolygon     # region
 end
 
-# ISSUE: how will this struct work for non-bicycle model vehicles?
-#   - in general sense, need a function to map vehicle state to a LazySets polygon for collision/goal checking
 struct Vehicle
-    wheelbase::Float64      # wheelbase [m]
-    body_length::Float64    # length [m]
-    body_width::Float64     # width [m]
-    axis_to_cent_x::Float64
-    axis_to_cent_y::Float64
+    wheelbase::Float64              # wheelbase [m]
+    body_dims::Array{Float64}       # [length, width] [m]
+    origin_to_cent::Array{Float64}  # [x, y] [m]
     origin_body::VPolygon
 end
 
@@ -35,29 +31,14 @@ function define_environment(workspace, obstacle_list, goal)
     return env
 end
 
-function define_vehicle(veh_name)
-    if veh_name == "marmot"
-        wheelbase = 0.324
-        body_length = 0.5207
-        body_width = 0.2762
-        axis_to_cent_x = 0.1715
-        axis_to_cent_y = 0.0
-
-    elseif veh_name == "unit_car"
-        wheelbase = 0.5
-        body_length = 0.75
-        body_width = 0.375
-        axis_to_cent_x = 0.25
-        axis_to_cent_y = 0.0
-    end
-
-    x0_min = axis_to_cent_x - 1/2*body_length
-    x0_max = axis_to_cent_x + 1/2*body_length
-    y0_min = axis_to_cent_y - 1/2*body_width
-    y0_max = axis_to_cent_y + 1/2*body_width
+function define_vehicle(wheelbase, body_dims, origin_to_cent)
+    x0_min = origin_to_cent[1] - 1/2*body_dims[1]
+    x0_max = origin_to_cent[1] + 1/2*body_dims[1]
+    y0_min = origin_to_cent[2] - 1/2*body_dims[2]
+    y0_max = origin_to_cent[2] + 1/2*body_dims[2]
     origin_body = VPolygon([[x0_min, y0_min], [x0_max, y0_min], [x0_max, y0_max], [x0_min, y0_max]])
 
-    veh = Vehicle(wheelbase, body_length, body_width, axis_to_cent_x, axis_to_cent_y, origin_body)
+    veh = Vehicle(wheelbase, body_dims, origin_to_cent, origin_body)
     return veh
 end
 

@@ -46,8 +46,8 @@ function plot_HJB_value(value_array, heatmap_clim, env, veh, sg)
             x_pos = sg.state_grid.cutPoints[1][end] + 1.5
             y_pos = sg.state_grid.cutPoints[2][end]/2  - 0.5
 
-            x_max = x_pos + sqrt((veh.axis_to_cent_x + 1/2*veh.body_length)^2 + (veh.axis_to_cent_y + 1/2*veh.body_width)^2)
-            y_min = y_pos - sqrt((veh.axis_to_cent_x + 1/2*veh.body_length)^2 + (veh.axis_to_cent_y + 1/2*veh.body_width)^2)
+            x_max = x_pos + sqrt((veh.origin_to_cent[1] + 1/2*veh.body_dims[1])^2 + (veh.origin_to_cent[2] + 1/2*veh.body_dims[2])^2)
+            y_min = y_pos - sqrt((veh.origin_to_cent[1] + 1/2*veh.body_dims[1])^2 + (veh.origin_to_cent[2] + 1/2*veh.body_dims[2])^2)
 
             x = [x_pos, y_pos, sg.state_grid.cutPoints[3][i3_plot]]
             
@@ -109,8 +109,8 @@ function plot_HJB_growth(value_array, heatmap_clim, step, k_plot, env, veh)
     x_pos = sg.state_grid.cutPoints[1][end] + 1.5
     y_pos = sg.state_grid.cutPoints[2][end]/2  - 0.5
 
-    x_max = x_pos + sqrt((veh.axis_to_cent_x + 1/2*veh.body_length)^2 + (veh.axis_to_cent_y + 1/2*veh.body_width)^2)
-    y_min = y_pos - sqrt((veh.axis_to_cent_x + 1/2*veh.body_length)^2 + (veh.axis_to_cent_y + 1/2*veh.body_width)^2)
+    x_max = x_pos + sqrt((veh.origin_to_cent[1] + 1/2*veh.body_dims[1])^2 + (veh.origin_to_cent[2] + 1/2*veh.body_dims[2])^2)
+    y_min = y_pos - sqrt((veh.origin_to_cent[1] + 1/2*veh.body_dims[1])^2 + (veh.origin_to_cent[2] + 1/2*veh.body_dims[2])^2)
 
     x = [x_pos, y_pos, sg.state_grid.cutPoints[3][k_plot]]
     
