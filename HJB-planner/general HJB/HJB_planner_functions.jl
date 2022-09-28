@@ -2,22 +2,11 @@
 
 using GridInterpolations
 using Random
-using BenchmarkTools
-using ProfileView
 
-include("HJB_generator_functions.jl")
 include("HJB_utils.jl")
-
-# planner hierarchy
-#   - HJB_planner()
-#       - HJB_action()
 
 # NOTE: not actually used in operation
 function plan_HJB_path(x_0, dt_plan, value_array, opt_ia_array, max_steps, EoM, env, veh, sg, ag)
-    if typeof(x_0) != Vector{Float64}
-        x_0 = convert(Vector{Float64}, x_0)
-    end
-
     x_k = x_0
 
     x_path = []  
@@ -26,7 +15,7 @@ function plan_HJB_path(x_0, dt_plan, value_array, opt_ia_array, max_steps, EoM, 
     step = 1
     while in_target_set(x_k, env, veh) == false && step < max_steps
         # calculate optimal action
-        u_k = fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)  # SPEED: focus is here
+        u_k = fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
         # u_k = HJB_policy(x_k, dt_plan, value_array, EoM, veh, sg, ag)
 
         # simulate forward one time step
@@ -42,8 +31,6 @@ function plan_HJB_path(x_0, dt_plan, value_array, opt_ia_array, max_steps, EoM, 
     end
     
     push!(x_path, x_k)
-
-    # println("steps in HJB path: ", step)
 
     return x_path, u_path, step
 end
@@ -66,7 +53,54 @@ function HJB_policy(x_k, dt_plan, value_array, EoM, veh, sg, ag)
     return a_k_opt
 end
 
-# ISSUE: at certain states, returns 0 as nearest neighbor action
+# use stored action grid to efficiently find near-optimal action at current state
+function fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
+    # building fast action list
+    index, weight = interpolants(sg.state_grid, x_k)
+    ia_complete = collect(1:length(ag.action_grid))
+    ia_neighbor_srt_unq = unique(opt_ia_array[index[sortperm(weight, rev=true)]])
+    ia_leftover_shuf_unq = shuffle(setdiff(ia_complete, opt_ia_array[index]))
+    ia_fast_list = vcat(ia_neighbor_srt_unq, ia_leftover_shuf_unq)
+
+    # assessing optimality
+    value_k = interp_value(x_k, value_array, sg)
+    epsilon = 0.75 * dt_plan
+
+    value_k1_min = Inf
+    ia_min = ag.action_grid[1]
+
+    for ia in ia_fast_list
+        if ia == 0
+            continue
+        end
+
+        # simulates action one step forward
+        x_k1 = runge_kutta_4(x_k, ag.action_grid[ia], dt_plan, EoM, veh, sg)
+        value_k1 = interp_value(x_k1, value_array, sg)
+
+        # checks if tested action passes near-optimal threshold
+        if value_k1 < (value_k - epsilon)
+            return ag.action_grid[ia]
+        end
+
+        # otherwise, stores best action found so far
+        if value_k1 < value_k1_min
+            value_k1_min = value_k1
+            ia_min = ia
+        end
+    end
+
+    
+    return ag.action_grid[ia_min]
+end
+
+# Dv = value_k1 - value_k
+# println(ia)
+# println("s->a->sp (iter): ", x_k, " -> ", ag.action_grid[ia], " -> ", x_k1)
+# println("v->vp: ", value_k, " -> ", value_k1, ", Dv = ", Dv)
+
+# println("taking threshold action: ", ia, "\n")
+# println("taking fully minimized action: ", ia_min, "\n")
 
 # TO-DO: improve action selection method
 #   - goal: check as few actions as possible, while still returning a reasonable action
@@ -95,71 +129,3 @@ end
 #       - increasing epsilon (more restrictive) makes it better, but still see loops for some paths
 #       - just increasing the goal works lol
 #       - could tighten epsilon as you get closer to goal (use straightline dist or value knowledge)
-
-function fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
-    index, weight = interpolants(sg.state_grid, x_k)
-    
-    ia_complete = collect(1:length(ag.action_grid))
-
-    # @show x_k
-    # @show index
-    # @show weight
-    ia_neighbor_srt_unq = unique(opt_ia_array[index[sortperm(weight, rev=true)]])
-    deleteat!(ia_neighbor_srt_unq, ia_neighbor_srt_unq .== 0)
-    
-    ia_leftover_shuf_unq = shuffle(setdiff(ia_complete, opt_ia_array[index]))
-    
-    ia_fast_list = vcat(ia_neighbor_srt_unq, ia_leftover_shuf_unq)
-
-    value_k = interp_value(x_k, value_array, sg)
-    epsilon = 0.75 * dt_plan
-
-    value_k1_min = Inf
-    ia_min = ag.action_grid[1]
-
-    for ia in ia_fast_list
-        x_k1 = runge_kutta_4(x_k, ag.action_grid[ia], dt_plan, EoM, veh, sg)
-        value_k1 = interp_value(x_k1, value_array, sg)
-
-        Dv = value_k1 - value_k
-        # println(ia)
-        # println("s->a->sp (iter): ", x_k, " -> ", ag.action_grid[ia], " -> ", x_k1)
-        # println("v->vp: ", value_k, " -> ", value_k1, ", Dv = ", Dv)
-
-        # checks if tested action passes near-optimal threshold
-        if value_k1 < (value_k - epsilon)
-            # println("taking threshold action: ", ia, "\n")
-            return ag.action_grid[ia]
-        end
-
-        # otherwise, stores best action found so far
-        if value_k1 < value_k1_min
-            value_k1_min = value_k1
-            ia_min = ia
-        end
-    end
-
-    # println("taking fully minimized action: ", ia_min, "\n")
-    return ag.action_grid[ia_min]
-end
-
-
-# # pulling grid nodes that neighbor x_k
-    # nbr_index, nbr_weight = interpolants(sg.state_grid, x_k)
-
-    # # finding nearest neighbor action
-    # nbr_index_nn = nbr_index[findmax(nbr_weight)[2]]
-    # ia_pick = opt_ia_array[nbr_index_nn]
-
-    # evaluating optimality
-    # value_k = interp_value(x_k, value_array, sg)
-    # value_k1 = Inf
-
-    # if ia_pick != 0
-    #     a_pick = ag.action_grid[ia_pick]
-    #     x_k1 = runge_kutta_4(x_k, ag.action_grid[ia_pick], dt_plan, EoM, veh, sg)
-    #     value_k1 = interp_value(x_k1, value_array, sg)
-    # else
-    #     a_pick = [Inf, Inf]
-    #     value_k1 = Inf
-    # end

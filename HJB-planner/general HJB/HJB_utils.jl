@@ -2,10 +2,8 @@
 
 using LazySets
 
-include("dynamics_models.jl")
-
 # 4th-order Runge-Kutta integration scheme
-function runge_kutta_4(x_k::Vector{Float64}, u_k::Vector{Float64}, dt, EoM, veh, sg)
+function runge_kutta_4(x_k, u_k, dt::Float64, EoM, veh, sg)    
     w1 = EoM(x_k, u_k, veh)
     w2 = EoM(x_k + w1*dt/2, u_k, veh)
     w3 = EoM(x_k + w2*dt/2, u_k, veh)
@@ -13,21 +11,47 @@ function runge_kutta_4(x_k::Vector{Float64}, u_k::Vector{Float64}, dt, EoM, veh,
 
     x_k1 = x_k + (1/6)*dt*(w1 + 2*w2 + 2*w3 + w4)
 
-    # adjust angles within bounds
-    for d in eachindex(x_k1)
-        if sg.angle_wrap_array[d] == true
-            x_k1[d] = x_k1[d] % (2*pi)
-            x_k1[d] > pi ? x_k1[d] -= 2*pi : x_k1[d] -= 0
-        end
-    end
+    x_k1 = mod_state_angle(x_k1, sg)
 
     return x_k1
 end
 
-# TO-DO: add component to check if state is within the state_grid
-#   - will this fix everything? or will action planner still try to go faster?
-#   - need to make sure interpolate() returns bad values when outside workspace
-#   - (!): don't think it's fully fixed
+# adjust angles within [-pi,pi] bounds
+function mod_state_angle(x, sg)
+    for d in eachindex(x)
+        if sg.angle_wrap_array[d] == true
+            x[d] = x[d] % (2*pi)
+            x[d] > pi ? x[d] -= 2*pi : x[d] -= 0
+        end
+    end
+
+    return x
+end
+
+function interp_value(x, value_array, sg)
+    # check if current state is within state space
+    for d in eachindex(x)
+        if x[d] < sg.state_grid.cutPoints[d][1] || x[d] > sg.state_grid.cutPoints[d][end]
+            val_itp = 1e5
+            return val_itp
+        end
+    end
+
+    # interpolate value at given state
+    val_itp = interpolate(sg.state_grid, value_array, x)
+
+    return val_itp
+end
+
+# used for GridInterpolations.jl indexing
+function multi2single_ind(ind_m, sg)
+    ind_s = 1
+    for d in eachindex(ind_m)
+        ind_s += (ind_m[d]-1)*prod(sg.state_grid.cut_counts[1:(d-1)])
+    end
+
+    return ind_s
+end
 
 # workspace checker
 function in_workspace(x, env, veh)
@@ -39,9 +63,6 @@ function in_workspace(x, env, veh)
         
     return false
 end
-
-
-# ISSUE: super slow (6090 alloc???)
 
 # obstacle set checker
 function in_obstacle_set(x, env, veh)
@@ -80,15 +101,7 @@ function state_to_body(x, veh)
     return body
 end
 
-function multi2single_ind(ind_m, sg)
-    ind_s = 1
-    for d in eachindex(ind_m)
-        ind_s += (ind_m[d]-1)*prod(sg.state_grid.cut_counts[1:(d-1)])
-    end
-
-    return ind_s
-end
-
+# used to create circles as polygons in LazySets.jl
 function circle2vpolygon(cent_cir, r_cir)
     # number of points used to discretize edge of circle
     pts = 12
@@ -103,17 +116,4 @@ function circle2vpolygon(cent_cir, r_cir)
     poly_cir = VPolygon(cir_vertices)
     
     return poly_cir
-end
-
-function find_idx(val, array)
-    idx = searchsortedfirst(array, val) - 1
-
-    return idx
-end
-
-function plot_polygon(my_plot, P, lw, lc, ll)
-    P_x_pts = [P[:,1]; P[1,1]]
-    P_y_pts = [P[:,2]; P[1,2]]
-
-    plot!(my_plot, P_x_pts, P_y_pts, linewidth=lw, linecolor=lc, label=ll)
 end

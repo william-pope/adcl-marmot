@@ -1,5 +1,7 @@
 # HJB_plotting.jl
 
+using Plots
+
 include("HJB_utils.jl")
 include("dynamics_models.jl")
 
@@ -55,7 +57,6 @@ function plot_HJB_value(value_array, heatmap_clim, env, veh, sg)
                 
             plot!(p_k, [x_pos], [y_pos], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
 
-            # plot_polygon(p_k, V, 2, :blue, "Vehicle")
             plot!(p_k, veh_body, alpha=0.0, linecolor=:blue, linewidth=2, linealpha=1.0, label="Vehicle")
 
             plot!(p_k, [x_max], [y_pos], markercolor=:white, label="")
@@ -118,7 +119,6 @@ function plot_HJB_growth(value_array, heatmap_clim, step, k_plot, env, veh)
         
     plot!(p_step, [x_pos], [y_pos], markercolor=:blue, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
 
-    # plot_polygon(p_step, V, 2, :blue, "Vehicle")
     plot!(p_step, veh_body, alpha=0.0, linecolor=:blue, linewidth=2, linealpha=1.0, label="Vehicle")
 
     plot!(p_step, [x_max], [y_pos], markercolor=:white, label="")

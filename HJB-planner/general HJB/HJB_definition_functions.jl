@@ -4,9 +4,9 @@ using LazySets
 using GridInterpolations
 
 struct Environment
-    workspace::VPolygon    # region
-    obstacle_list::Array{Any}     # list of regions
-    goal::VPolygon     # region
+    workspace::VPolygon
+    obstacle_list::Array{Any}
+    goal::VPolygon
 end
 
 struct Vehicle
@@ -26,11 +26,13 @@ struct ActionGrid
     action_grid::RectangleGrid
 end
 
+# defines environment geoemtry
 function define_environment(workspace, obstacle_list, goal)
     env = Environment(workspace, obstacle_list, goal)
     return env
 end
 
+# defines vehicle geometry
 function define_vehicle(wheelbase, body_dims, origin_to_cent)
     x0_min = origin_to_cent[1] - 1/2*body_dims[1]
     x0_max = origin_to_cent[1] + 1/2*body_dims[1]
@@ -42,12 +44,12 @@ function define_vehicle(wheelbase, body_dims, origin_to_cent)
     return veh
 end
 
-# TO-DO: catch if state or action dimensions violate the chosen EoM
+# discretizes state space
 function define_state_grid(state_space, dx_sizes, angle_wrap)
     state_iters = [minimum(axis):dx_sizes[i]:maximum(axis) for (i, axis) in enumerate(state_space)]
     state_grid = RectangleGrid(state_iters...)
 
-    # Gauss-Seidel
+    # Gauss-Seidel sweeping scheme
     gs_iters = [[0,1] for axis in state_space]
     gs_prod = Iterators.product(gs_iters...)
     gs_list = Iterators.map(tpl -> convert(SVector{length(gs_iters), Int}, tpl), gs_prod)
@@ -78,6 +80,7 @@ function define_state_grid(state_space, dx_sizes, angle_wrap)
     return sg
 end
 
+# discretizes action space
 function define_action_grid(action_space, du_num_steps)
     action_iters = [range(minimum(axis), maximum(axis), du_num_steps[i]) for (i, axis) in enumerate(action_space)]
     action_grid = RectangleGrid(action_iters...)

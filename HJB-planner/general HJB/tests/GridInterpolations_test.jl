@@ -6,25 +6,25 @@ using StaticArrays
 # rectangular grid can be defined in n-dimensions
 # NOTE: grid definition not able to handle backwards arrays
 state_grid = RectangleGrid(0:1, 0:1, 0:1) 
-value_array = [2, 5, 2, 3, 4, 1, 3, 6]
+value_array = MVector{8, Int64}(2, 5, 2, 3, 4, 1, 3, 6)
 
 full_set = collect(1:10)
 
 x = [0.18, 0.12, 0.15]
 @show interpolate(state_grid, value_array, x)
 
-index, weight = interpolants(state_grid, x)
-@show index
-@show weight
-@show nbr_index_sorted = index[sortperm(weight, rev=true)]     # returns grid indices sorted by distance to state
-@show nbr_value_srt_unq = unique(value_array[nbr_index_sorted])
+# index, weight = interpolants(state_grid, x)
+# @show index
+# @show weight
+# @show nbr_index_sorted = index[sortperm(weight, rev=true)]     # returns grid indices sorted by distance to state
+# @show nbr_value_srt_unq = unique(value_array[nbr_index_sorted])
 
-println(" ")
-@show leftover_values = setdiff(full_set, value_array)
-@show leftover_values_shuf = shuffle(leftover_values)
+# println(" ")
+# @show leftover_values = setdiff(full_set, value_array)
+# @show leftover_values_shuf = shuffle(leftover_values)
 
-println(" ")
-@show final_order = vcat(nbr_value_srt_unq, leftover_values_shuf)
+# println(" ")
+# @show final_order = vcat(nbr_value_srt_unq, leftover_values_shuf)
 
 # @btime nbr_value_sorted = value_array[index[sortperm(weight, rev=true)]]
 
@@ -53,3 +53,12 @@ println(" ")
 
 # testing 1-d data array -> n-d data array
 # value_array_m = reshape(value_array, state_grid.cut_counts...)
+
+# dval_peaks = findall(dval .== maximum(dval))
+# for ind_s in dval_peaks
+#     x = ind2x(sg.state_grid, ind_s)
+#     println(x, ": ", value_array_old[ind_s], " -> ", value_array[ind_s])
+# end
+
+# println("num peaks = ", length(dval_peaks))
+# println("")

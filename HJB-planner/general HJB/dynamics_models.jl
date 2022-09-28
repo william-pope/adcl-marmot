@@ -51,3 +51,20 @@ function bicycle_5d_EoM(x::Vector{Float64}, u::Vector{Float64}, veh::Vehicle)
 
     return xdot
 end
+
+# NOTE: StaticArrays need to be added, but still figuring out some issues
+# using StaticArrays
+
+# StaticArrays version:
+# # equations of motion for 3 DoF kinematic bicycle model
+# # u = [u_v, u_phi]
+# function bicycle_3d_EoM(x::SVector{3, Float64}, u::SVector{2, Float64}, veh::Vehicle)
+#     xdot1 = u[1]*cos(x[3])    # x
+#     xdot2 = u[1]*sin(x[3])    # y
+#     xdot3 = u[1]*(1/veh.wheelbase)*tan(u[2])  # theta
+
+#     n = 3
+#     xdot = SVector{n, Float64}(xdot1, xdot2, xdot3)
+
+#     return xdot
+# end
