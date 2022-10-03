@@ -1,8 +1,8 @@
 # Hamilton-Jacobi-Bellman demonstration
 
+using StaticArrays
 using BSON: @save, @load
 using BenchmarkTools
-using ProfileView
 
 include("HJB_definition_functions.jl")
 include("HJB_solver_functions.jl")
@@ -19,16 +19,16 @@ algs_path = algs_path_mac
 
 # solver params
 solve_HJB_flag = true
-plot_growth_flag = true
-plot_value_flag = true
+plot_growth_flag = false
+plot_value_flag = false
 heatmap_clim = 15
 
 dt_solve = 0.5
 dval_tol = 0.1
-max_solve_steps = 120
+max_solve_steps = 100
 
 # planner params
-plan_HJB_flag = true
+plan_HJB_flag = false
 
 dt_plan = 0.5
 max_plan_steps = 2e3
@@ -58,8 +58,8 @@ angle_wrap = [false, false, true]
 sg = define_state_grid(state_space, dx_sizes, angle_wrap)
 
 # define action set
-action_space = [[-1.0, 1.0], [-0.475, 0.475]]
-du_num_steps = [2, 5]
+action_space = [[1.0], [-0.475, 0.475]]
+du_num_steps = [1, 5]
 ag = define_action_grid(action_space, du_num_steps)
 
 # define initial states for paths
@@ -68,18 +68,7 @@ ag = define_action_grid(action_space, du_num_steps)
 #             [4.8, 2.5, deg2rad(95)],
 #             [1.7, 1.5, deg2rad(165)]]
 
-x_0_list = [[4.1, 1.7, deg2rad(120)]]
-
-
-# # X) BENCHMARKING --- --- ---
-# x = [3.1, 1.2, 0.7*pi]
-# a = [1.0, -0.475]
-# # ProfileView.@profview 
-
-# @btime EoM(x, a, veh)
-# @btime runge_kutta_4(x, a, dt_solve, EoM, veh, sg)
-
-# # val_p = interp_value(x_p, value_array, sg)
+x_0_list = [SA[4.1, 1.7, deg2rad(120)]]
 
 
 # 3) MAIN --- --- ---
@@ -95,18 +84,6 @@ else
     @load algs_path*"bson/value_array.bson" value_array
     @load algs_path*"bson/opt_ia_array.bson" opt_ia_array
 end
-
-# HJB_policy 
-#   -> 230.114 us (full path planner, 3 actions)
-#   -> 430.891 us (full path planner, 9 actions)
-#   -> 596.315 us (full path planner, 15 actions)
-# fast_policy (no safety check)
-#   -> 127.109 us (full path planner, 3 actions)
-#   -> 119.857 us (full path planner, 9 actions)
-#   -> 121.070 us (full path planner, 15 actions)
-
-# x_0 = x_0_list[1]
-# @btime x_path, u_path, step = plan_HJB_path(x_0, dt_plan, value_array, opt_ia_array, max_plan_steps, EoM, env, veh, sg, ag)
 
 # plan paths to goal
 if plan_HJB_flag == true
@@ -135,11 +112,43 @@ if plan_HJB_flag == true
     plot_HJB_path(x_path_list)
 end
 
-# x_k = [4.1, 1.7, deg2rad(120)]
+# x_k = SA[4.1, 1.7, deg2rad(120)]
 
 # @btime HJB_policy(x_k, dt_plan, value_array, EoM, veh, sg, ag)
-# @btime a_k = fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
+# @btime fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
 
 # ProfileView.@profview for _ in 1:1000
 #     fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
 # end
+
+# X) PERFORMANCE --- --- ---
+
+
+# x_dot = [0.0, 0.0, 0.0]
+# x = [3.1, 1.2, 0.7*pi]
+# a = [1.0, -0.475]
+
+# x_dot = MVector(0.0, 0.0, 0.0)
+x = SVector(3.1, 1.2, 0.7*pi)
+a = SVector(1.0, -0.475)
+
+# ProfileView.@profview 
+
+# @btime bicycle_3d_EoM(x, a, veh)
+# @btime bicycle_3d_EoM!(x_dot, x, a, veh)
+
+# println("\nEoM")
+# @btime bicycle_3d_EoM($x, $a, $veh)
+
+# println("\nRK4")
+# @btime runge_kutta_4($x, $a, $dt_solve, $EoM, $veh, $sg)
+
+# println("\ninterp")
+# @btime interpolate($sg.state_grid, $value_array, $x)
+# @btime interp_value($x, $value_array, $sg)
+
+# println("\npolicy")
+# @btime HJB_policy($x, $dt_plan, $value_array, $EoM, $veh, $sg, $ag)
+# @btime fast_policy($x, $dt_plan, $value_array, $opt_ia_array, $EoM, $veh, $sg, $ag)
+
+# @profview fast_policy(x, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)

@@ -1,5 +1,7 @@
 # HJB_solver_functions.jl
 
+using StaticArrays
+
 include("HJB_utils.jl")
 include("HJB_plotting.jl")
 
@@ -16,10 +18,10 @@ function solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, Dv_tol, max_solve_steps,
     while Dv_max > Dv_tol && solve_step <= max_solve_steps
         Dv_max = 0.0
         for ind_m in sg.ind_gs_array[gs_step]
-            x = sg.state_grid[ind_m...]
             ind_s = multi2single_ind(ind_m, sg)
 
             if set_array[ind_s] == 2
+                x = sg.state_list_static[ind_s]
                 v_kn1 = value_array[ind_s]
                 
                 value_array[ind_s], opt_ia_array[ind_s] = update_node_value(x, value_array, dt_solve, EoM, env, veh, sg, ag)
@@ -32,9 +34,6 @@ function solve_HJB_PDE(env, veh, EoM, sg, ag, dt_solve, Dv_tol, max_solve_steps,
                 end
             end
         end
-        
-        # TO-DO: see if this is needed for angle wrap
-        # value_array[:,:,end] = value_array[:,:,1]
 
         println("step: ", solve_step, ", Dv_max = ", Dv_max) #, "Dv_max = ", Dv_max)
 
@@ -64,12 +63,12 @@ function update_node_value(x, value_array, dt_solve, EoM, env, veh, sg, ag)
     ia_opt_ijk = 1
 
     for ia in 1:length(ag.action_grid)
-        a = ag.action_grid[ia]
+        a = ag.action_list_static[ia]
 
         cost_p = get_cost(x, a, dt_solve)
 
-        x_p = runge_kutta_4(x, a, dt_solve, EoM, veh, sg)       # SPEED
-        val_p = interp_value(x_p, value_array, sg)              # SPEED
+        x_p = runge_kutta_4(x, a, dt_solve, EoM, veh, sg)
+        val_p = interp_value(x_p, value_array, sg)
 
         qval_a = cost_p + val_p
 

@@ -6,12 +6,12 @@ using StaticArrays
 # rectangular grid can be defined in n-dimensions
 # NOTE: grid definition not able to handle backwards arrays
 state_grid = RectangleGrid(0:1, 0:1, 0:1) 
-value_array = MVector{8, Int64}(2, 5, 2, 3, 4, 1, 3, 6)
+value_array = [2, 5, 2, 3, 4, 1, 3, 6]
 
-full_set = collect(1:10)
+x = SVector(0.18, 0.12, 0.15)
+# x = [0.18, 0.12, 0.15]
 
-x = [0.18, 0.12, 0.15]
-@show interpolate(state_grid, value_array, x)
+@btime interpolate(state_grid, value_array, x)
 
 # index, weight = interpolants(state_grid, x)
 # @show index
