@@ -57,12 +57,12 @@ end
 function fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
     # gets actions from neighboring nodes
     nbr_indices, nbr_weights = interpolants(sg.state_grid, x_k)   # (!): 4 alloc (no fix)
-    
-    coord_srt = sortperm(nbr_weights, rev=true)             # (!): 2 alloc 
 
+    coord_srt = sortperm(nbr_weights, rev=true)             # (!): 2 alloc 
+    
     nbr_indices_srt = view(nbr_indices, coord_srt)          # no alloc
 
-    ia_neighbor_srt_unq = opt_ia_array[nbr_indices_srt]     # (!): 1 alloc 
+    ia_neighbor_srt_unq = opt_ia_array[nbr_indices]     # (!): 1 alloc 
 
     unique!(ia_neighbor_srt_unq)                            # no alloc
 
@@ -73,7 +73,6 @@ function fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
     ia_min = 1
     value_k1_min = Inf
     
-
     # checks neighbors first
     for ia in ia_neighbor_srt_unq
         if ia == 0
@@ -124,6 +123,12 @@ function fast_policy(x_k, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
     return ag.action_list_static[ia_min]
 end
 
+
+# sortperm!(nbr_indices, nbr_weights, rev=true) 
+# @show nbr_indices
+
+# sort!(nbr_indices, by = nbr_indices[x] -> nbr_weights[x])
+# @show nbr_indices
 
 # Dv = value_k1 - value_k
 # println(ia)

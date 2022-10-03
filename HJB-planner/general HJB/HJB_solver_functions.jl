@@ -96,8 +96,8 @@ function initialize_value_array(sg, env, veh)
     set_array = zeros(Int, length(sg.state_grid))
 
     for ind_m in sg.ind_gs_array[1]
-        x = sg.state_grid[ind_m...]
         ind_s = multi2single_ind(ind_m, sg)
+        x = sg.state_list_static[ind_s]
 
         if in_workspace(x, env, veh) == false || in_obstacle_set(x, env, veh) == true
             value_array[ind_s] = 1e5

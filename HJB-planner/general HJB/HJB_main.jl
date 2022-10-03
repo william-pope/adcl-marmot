@@ -18,7 +18,7 @@ algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 algs_path = algs_path_mac
 
 # solver params
-solve_HJB_flag = true
+solve_HJB_flag = false
 plot_growth_flag = false
 plot_value_flag = false
 heatmap_clim = 15
@@ -129,7 +129,7 @@ end
 # a = [1.0, -0.475]
 
 # x_dot = MVector(0.0, 0.0, 0.0)
-x = SVector(3.1, 1.2, 0.7*pi)
+x = SVector(3.1, 1.23, 0.7*pi)
 a = SVector(1.0, -0.475)
 
 # ProfileView.@profview 
@@ -147,8 +147,9 @@ a = SVector(1.0, -0.475)
 # @btime interpolate($sg.state_grid, $value_array, $x)
 # @btime interp_value($x, $value_array, $sg)
 
-# println("\npolicy")
-# @btime HJB_policy($x, $dt_plan, $value_array, $EoM, $veh, $sg, $ag)
-# @btime fast_policy($x, $dt_plan, $value_array, $opt_ia_array, $EoM, $veh, $sg, $ag)
+println("\npolicy (", length(ag.action_grid), " actions)")
+@btime HJB_policy($x, $dt_plan, $value_array, $EoM, $veh, $sg, $ag)
+@btime fast_policy($x, $dt_plan, $value_array, $opt_ia_array, $EoM, $veh, $sg, $ag)
 
-# @profview fast_policy(x, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
+# @profview 
+# fast_policy(x, dt_plan, value_array, opt_ia_array, EoM, veh, sg, ag)
