@@ -2,35 +2,68 @@
 
 using LazySets
 
-# 4th-order Runge-Kutta integration scheme
-function runge_kutta_4(x_k, u_k, dt::Float64, EoM, veh, sg)    
-    w1 = EoM(x_k, u_k, veh)
-    w2 = EoM(x_k + w1*dt/2, u_k, veh)
-    w3 = EoM(x_k + w2*dt/2, u_k, veh)
-    w4 = EoM(x_k + w3*dt, u_k, veh)
+function common_prop_HJB(x_k, a_k, Dt, substeps)
+    x_k1_subpath = Array{Array{Float64, 1}, 1}(undef, substeps)
 
-    x_k1 = x_k + (1/6)*dt*(w1 + 2*w2 + 2*w3 + w4)
+    Dt_sub = Dt / substeps
 
-    x_k1_m = map(mod_angle, x_k1, sg.angle_wrap_array) 
+    x_kk = x_k
 
-    return x_k1_m
-end
+    # step through substeps from x_k
+    for kk in 1:substeps
+        # Dv applied on the first substep only
+        kk == 1 ? a_kk = a_k : a_kk = [0.0, a_k[2]]
+            
+        # propagate for Dt_sub
+        x_kk1 = common_4d_DT_EoM_HJB(x_kk, a_kk, Dt_sub)
 
-function mod_angle(x::Float64, wrap::Bool)
-    if wrap == true
-        xm = x % (2*pi)
-        if xm > pi
-            xm -= 2*pi
-        end
-    else
-        xm = x
+        # store new point in subpath
+        x_k1_subpath[kk] = x_kk1
+
+        # pass state to next loop
+        x_kk = x_kk1
     end
 
-    return xm
+    x_k1 = x_k1_subpath[end]
+
+    return x_k1, x_k1_subpath
 end
 
-# n = length(x_k)
-# x_k1_m = map(i -> mod_angle(x_k1[i], sg.angle_wrap_array[i]), 1:n)  
+function common_4d_DT_EoM_HJB(x_k, a_k, Dt)
+    # system parameters
+    l = 0.324
+
+    # break out current state
+    xp_k = x_k[1]
+    yp_k = x_k[2]
+    theta_k = x_k[3]
+    v_k = x_k[4]
+
+    # break out action
+    Dv_k = a_k[1]
+    phi_k = a_k[2]
+
+    # calculate change in state over discrete time interval
+    xp_dot_k = (v_k + Dv_k) * cos(theta_k)
+    yp_dot_k = (v_k + Dv_k) * sin(theta_k)
+    theta_dot_k = (v_k + Dv_k) * 1/l * tan(phi_k)
+
+    # calculate next state
+    xp_k1 = xp_k + (xp_dot_k * Dt)
+    yp_k1 = yp_k + (yp_dot_k * Dt)
+    theta_k1 = theta_k + (theta_dot_k * Dt)
+    v_k1 = v_k + (Dv_k)
+
+    theta_k1 = theta_k1 % (2*pi)
+    if theta_k1 > pi
+        theta_k1 -= 2*pi
+    end
+
+    # reassemble state vector
+    x_k1 = SA[xp_k1, yp_k1, theta_k1, v_k1]
+
+    return x_k1
+end
 
 function interp_value(x, value_array, sg)
     # check if current state is within state space
@@ -82,12 +115,18 @@ function in_obstacle_set(x, env, veh)
 end
 
 # target set checker
-function in_target_set(x, env::Environment, veh::Vehicle)
-    veh_body = state_to_body(x, veh)
+function in_target_set(x, env, veh)
+    state = Singleton(x[1:2])
 
-    if issubset(veh_body, env.goal)
+    if issubset(state, env.goal)
         return true
     end
+    
+    # veh_body = state_to_body(x, veh)
+
+    # if issubset(veh_body, env.goal)
+    #     return true
+    # end
 
     return false
 end
