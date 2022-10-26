@@ -68,33 +68,38 @@ function solve_HJB_PDE(env, veh, sg, Dt, Dval_tol, max_solve_steps, plot_growth_
     return value_array, a_ind_opt_array, set_array
 end
 
-# TO-DO: may need to do collision-checking along propagation subpath
 function update_node_value(x, value_array, Dt, env, veh, sg) 
-    qval_min = Inf
+    # using entire action set
+    ro_actions = get_ro_action_set(x)
+    a_ind_array = collect(1:length(actions))
+
+    # find optimal action and value at state
+    a_ind_opt, val_x = optimize_action(x, a_ind_array, ro_actions, value_array, Dt, sg)
+   
+    return val_x, a_ind_opt
+end
+
+function optimize_action(x, a_ind_array, actions, value_array, Dt, sg)
+    val_x = Inf
     a_ind_opt = 1
-
-    actions = get_ro_action_set(x)
-
-    for a_ind in eachindex(actions)
+    
+    for a_ind in a_ind_array
         a = actions[a_ind]
 
-        cost_p = get_cost(x, a, Dt)
+        cost_x_a = get_cost(x, a, Dt)
 
-        x_p, x_p_subpath = common_prop_HJB(x, a, Dt, 4)
+        x_p, _ = common_prop_HJB(x, a, Dt, 4)
+        val_xp = interp_state_value(x_p, value_array, sg)
 
-        val_p = interp_subpath_value(x_p, x_p_subpath, value_array, sg)
+        qval_x_a = cost_x_a + val_xp
 
-        qval_a = cost_p + val_p
-
-        if qval_a < qval_min
-            qval_min = qval_a
+        if qval_x_a < val_x
+            val_x = qval_x_a
             a_ind_opt = a_ind
         end
     end
 
-    val_ijk = qval_min
-   
-    return val_ijk, a_ind_opt
+    return a_ind_opt, val_x
 end
 
 # initialize arrays

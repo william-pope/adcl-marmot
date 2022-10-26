@@ -17,16 +17,16 @@ algs_path_nuc = "/home/adcl/Documents/marmot-algs/"
 algs_path = algs_path_mac
 
 # solver params
-solve_HJB_flag = 1
+solve_HJB_flag = 0
 Dval_tol = 0.01
 max_solve_steps = 100
 
-plot_growth_flag = 1
-plot_value_flag = 1
+plot_growth_flag = 0
+plot_value_flag = 0
 heatmap_clim = 10
 
 # planner params
-plan_HJB_flag = 0
+plan_HJB_flag = 1
 max_plan_steps = 2e3
 
 
@@ -178,8 +178,8 @@ if plan_HJB_flag == 1
         x_path, x_subpath, a_path, step = plan_rollout_path(x_0, Dt, value_array, a_ind_opt_array, max_plan_steps, env, veh, sg)
         x_path_HJB, x_subpath_HJB, _, _ = plan_HJB_path(x_0, Dt, value_array, a_ind_opt_array, max_plan_steps, env, veh, sg)
         
-        display(x_path)
-        display(a_path)
+        # display(x_path)
+        # display(a_path)
 
         # for kk in eachindex(x_subpath)
         #     println("kk = ",  kk,  ", x_kk = ", x_subpath[kk])
