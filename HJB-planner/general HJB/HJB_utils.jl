@@ -68,6 +68,29 @@ function common_4d_DT_EoM_HJB(x_k, a_k, Dt)
     return x_k1
 end
 
+function optimize_action(x, a_ind_array, actions, value_array, Dt, sg)
+    val_x = Inf
+    a_ind_opt = 1
+    
+    for a_ind in a_ind_array
+        a = actions[a_ind]
+
+        cost_x_a = get_cost(x, a, Dt)
+
+        x_p, _ = common_prop_HJB(x, a, Dt, 4)
+        val_xp = interp_state_value(x_p, value_array, sg)
+
+        qval_x_a = cost_x_a + val_xp
+
+        if qval_x_a < val_x
+            val_x = qval_x_a
+            a_ind_opt = a_ind
+        end
+    end
+
+    return a_ind_opt, val_x
+end
+
 function interp_state_value(x, value_array, sg)
     # check if current state is within state space
     for d in eachindex(x)

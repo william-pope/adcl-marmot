@@ -79,28 +79,7 @@ function update_node_value(x, value_array, Dt, env, veh, sg)
     return val_x, a_ind_opt
 end
 
-function optimize_action(x, a_ind_array, actions, value_array, Dt, sg)
-    val_x = Inf
-    a_ind_opt = 1
-    
-    for a_ind in a_ind_array
-        a = actions[a_ind]
 
-        cost_x_a = get_cost(x, a, Dt)
-
-        x_p, _ = common_prop_HJB(x, a, Dt, 4)
-        val_xp = interp_state_value(x_p, value_array, sg)
-
-        qval_x_a = cost_x_a + val_xp
-
-        if qval_x_a < val_x
-            val_x = qval_x_a
-            a_ind_opt = a_ind
-        end
-    end
-
-    return a_ind_opt, val_x
-end
 
 # initialize arrays
 function initialize_value_array(sg, env, veh)
