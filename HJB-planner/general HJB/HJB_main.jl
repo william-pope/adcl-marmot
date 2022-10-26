@@ -58,35 +58,6 @@ sg = define_state_grid(state_space, dx_sizes, angle_wrap)
 
 # TO-DO: need to make sure that reactive controller velocity still allows vehicle to reach goal
 
-# TO-DO: need to modify to account for possible velocity change in phi_lim calculation
-# define state-dependent action space
-function get_action_set(x)
-    # set change in velocity (Dv) limit
-    Dv_lim = 0.5
-
-    # set steering angle (phi) limit
-    Dt = 0.5
-    l = 0.324
-    phi_max = 0.475
-    Dtheta_lim = deg2rad(45)
-
-    phi_lim = atan(Dtheta_lim * 1/Dt * 1/abs(x[4]) * l)
-    phi_lim = clamp(phi_lim, 0.0, phi_max)
-
-    # define full action set
-    action_set = [[0.0, 0.0],
-                [0.0, -Dv_lim],
-                [0.0, Dv_lim],
-                [-phi_lim, 0.0],
-                [-2/3*phi_lim, 0.0],
-                [-1/3*phi_lim, 0.0],
-                [1/3*phi_lim, 0.0],
-                [2/3*phi_lim, 0.0],
-                [phi_lim, 0.0]]
-
-    return action_set
-end
-
 function get_ro_action_set(x)
     # set change in velocity (Dv) limit
     Dv_lim = 0.5

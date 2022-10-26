@@ -13,11 +13,9 @@ function solve_HJB_PDE(env, veh, sg, Dt, Dval_tol, max_solve_steps, plot_growth_
     num_gs_sweeps = 2^dimensions(sg.state_grid)
 
     # main function loop
-    Dval_max = Inf
-    solve_step = 1
     gs_step = 1
 
-    while solve_step <= max_solve_steps
+    for solve_step in 1:max_solve_steps
         Dval_max = 0.0
 
         for ind_m in sg.ind_gs_array[gs_step]
@@ -57,8 +55,6 @@ function solve_HJB_PDE(env, veh, sg, Dt, Dval_tol, max_solve_steps, plot_growth_
             gs_step += 1
         end
 
-        solve_step += 1
-
         # plot ---
         if plot_growth_flag == 1
             plot_HJB_growth(value_array, heatmap_clim, solve_step, env, veh)
@@ -71,7 +67,7 @@ end
 function update_node_value(x, value_array, Dt, env, veh, sg) 
     # using entire action set
     ro_actions = get_ro_action_set(x)
-    a_ind_array = collect(1:length(actions))
+    a_ind_array = collect(1:length(ro_actions))
 
     # find optimal action and value at state
     a_ind_opt, val_x = optimize_action(x, a_ind_array, ro_actions, value_array, Dt, sg)

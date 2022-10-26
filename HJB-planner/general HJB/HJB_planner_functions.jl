@@ -5,7 +5,7 @@ using Random
 
 include("HJB_utils.jl")
 
-function plan_rollout_path(x_0, Dt, value_array, a_ind_opt_array, max_steps, env, veh, sg)
+function plan_rollout_path(x_0, Dt, value_array, a_ind_opt_array, max_plan_steps, env, veh, sg)
     x_path = []  
     x_subpath = []  
     a_path = []
@@ -15,7 +15,7 @@ function plan_rollout_path(x_0, Dt, value_array, a_ind_opt_array, max_steps, env
     push!(x_subpath, x_k)
    
     step = 1
-    while in_target_set(x_k, env, veh) == false && step < max_steps
+    while in_target_set(x_k, env, veh) == false && step < max_plan_steps
         # calculate rollout action for given Dv_RC
         Dv_RC = rand([-0.5, 0.0, 0.5])
         a_k = rollout_policy(x_k, Dv_RC, Dt, value_array, veh, sg)
