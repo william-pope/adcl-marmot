@@ -6,7 +6,7 @@ using StaticArrays
 
 struct Environment
     workspace::VPolygon
-    obstacle_list::Array{Any}
+    obstacle_list::Array{VPolygon}
     goal::VPolygon
 end
 

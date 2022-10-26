@@ -76,7 +76,7 @@ function plot_HJB_growth(value_array, heatmap_clim, step, env, veh)
     # reshape value array into n-dimensional array
     value_array_m = reshape(value_array, sg.state_grid.cut_counts...)
 
-    i3_plot = length(sg.state_grid.cutPoints[3])
+    i3_plot = 19
     i4_plot = 1
     plot_val = transpose(value_array_m[:, :, i3_plot, i4_plot])
     
@@ -136,19 +136,38 @@ end
 # plot paths from planner
 function plot_HJB_path(x_path_list, x_subpath_list)
     p_path = plot(aspect_ratio=:equal, 
-                size=(800,800))
+                size=(800,800),
+                xlabel="X-axis [m]", ylabel="Y-axis [m]",
+                title="Rollout Policy vs Pure HJB Policy")
 
-    plot!(p_path, env.workspace, alpha=0.0, linecolor=:black, linewidth=2, linealpha=1.0, label="Workspace")
-    plot!(p_path, env.goal, alpha=0.0, linecolor=:green, linewidth=2, linealpha=1.0, label="Goal")
+    # workspace
+    plot!(p_path, env.workspace, 
+        alpha=0.0, 
+        linecolor=:black, linewidth=2, linealpha=1.0, 
+        label="Workspace")
+    
+    # goal
+    plot!(p_path, env.goal, 
+        color=:green, alpha=0.125, 
+        linecolor=:green, linewidth=2, linealpha=1.0, 
+        label="Goal")
 
+    # obstacles
     if isempty(env.obstacle_list) == false
-        plot!(p_path, env.obstacle_list[1], alpha=0.0, linecolor=:red, linewidth=2, linealpha=1.0, label="Obstacle")
+        plot!(p_path, env.obstacle_list[1], 
+            color=:red, alpha=0.125, 
+            linecolor=:red, linewidth=2, linealpha=1.0, 
+            label="Obstacle")
 
-        for obstacle in env.obstacle_list
-            plot!(p_path, obstacle, alpha=0.0, linecolor=:red, linewidth=2, linealpha=1.0)
+        for obstacle in env.obstacle_list[2:end]
+            plot!(p_path, obstacle, 
+                color=:red, alpha=0.125, 
+                linecolor=:red, linewidth=2, linealpha=1.0,
+                label="")
         end
     end
 
+    label_list = ["Rollout Policy", "Pure HJB Policy"]
     for ip in 1:length(x_path_list)
         x_path = x_path_list[ip]
         x_subpath = x_subpath_list[ip]
@@ -161,7 +180,7 @@ function plot_HJB_path(x_path_list, x_subpath_list)
 
         # subpath lines
         plot!(p_path, getindex.(x_subpath,1), getindex.(x_subpath,2),
-            linez=linez_velocity, clim=(0,3.5),
+            linez=linez_velocity, clim=(0,3.5), colorbar_title="Velocity [m/s]",
             linewidth = 2,
             # markershape=:circle, markersize=1.5, markerstrokewidth=0, 
             label="")
@@ -169,8 +188,8 @@ function plot_HJB_path(x_path_list, x_subpath_list)
         # path points
         plot!(p_path, getindex.(x_path,1), getindex.(x_path,2),
         linewidth = 0, linealpha=0.0,
-        markershape=:circle, markersize=2.0, markerstrokewidth=0, 
-        label="")
+        markershape=:circle, markersize=2.5, markerstrokewidth=0, 
+        label=label_list[ip])
 
         # start position
         plot!(p_path, [x_path[1][1]], [x_path[1][2]], 

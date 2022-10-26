@@ -8,7 +8,7 @@ include("HJB_plotting.jl")
 # main function to iteratively calculate HJB value function
 function solve_HJB_PDE(env, veh, sg, Dt, Dval_tol, max_solve_steps, plot_growth_flag, heatmap_clim)
     # initialize data arrays
-    value_array, opt_ia_array, set_array = initialize_value_array(sg, env, veh)
+    value_array, a_ind_opt_array, set_array = initialize_value_array(sg, env, veh)
 
     num_gs_sweeps = 2^dimensions(sg.state_grid)
 
@@ -17,9 +17,9 @@ function solve_HJB_PDE(env, veh, sg, Dt, Dval_tol, max_solve_steps, plot_growth_
     solve_step = 1
     gs_step = 1
 
-    while !(Dval_max < Dval_tol && gs_step == 1) && (solve_step <= max_solve_steps)
-
+    while solve_step <= max_solve_steps
         Dval_max = 0.0
+
         for ind_m in sg.ind_gs_array[gs_step]
             ind_s = multi2single_ind(ind_m, sg)
 
@@ -31,9 +31,9 @@ function solve_HJB_PDE(env, veh, sg, Dt, Dval_tol, max_solve_steps, plot_growth_
                 v_kn1 = value_array[ind_s]
                 
                 # calculate new value
-                value_array[ind_s], opt_ia_array[ind_s] = update_node_value(x, value_array, Dt, env, veh, sg)
+                value_array[ind_s], a_ind_opt_array[ind_s] = update_node_value(x, value_array, Dt, env, veh, sg)
                 
-                # compare old and new values
+                # compare old and new values, update largest change in value
                 v_k = value_array[ind_s]
                 Dval = abs(v_k - v_kn1)
 
@@ -43,15 +43,14 @@ function solve_HJB_PDE(env, veh, sg, Dt, Dval_tol, max_solve_steps, plot_growth_
             end
         end
 
-        # ISSUE: need to wrap value on theta axis
-        #   - theta[1] = -pi, theta[end] = +pi -> same actual state
-        #   - states should have same value
-        #       - ok if solved for twice
-        #   - when theta is propagated over boundary, should wrap to other side
-        #   - basically only receiving info from one direction in current set up
-
         println("solve_step: ", solve_step, ", gs_step: ", gs_step, ", Dval_max = ", Dval_max)
 
+        # check if convergence condition is met
+        if Dval_max <= Dval_tol
+            break
+        end
+
+        # update step counters
         if gs_step == num_gs_sweeps
             gs_step = 1
         else
@@ -66,44 +65,42 @@ function solve_HJB_PDE(env, veh, sg, Dt, Dval_tol, max_solve_steps, plot_growth_
         end
     end
 
-    return value_array, opt_ia_array, set_array
+    return value_array, a_ind_opt_array, set_array
 end
 
 # TO-DO: may need to do collision-checking along propagation subpath
 function update_node_value(x, value_array, Dt, env, veh, sg) 
     qval_min = Inf
-    ia_opt_ijk = 1
+    a_ind_opt = 1
 
-    actions = get_action_set(x)
+    actions = get_ro_action_set(x)
 
-    for ia in eachindex(actions)
-        a = actions[ia]
+    for a_ind in eachindex(actions)
+        a = actions[a_ind]
 
         cost_p = get_cost(x, a, Dt)
 
         x_p, x_p_subpath = common_prop_HJB(x, a, Dt, 4)
 
-        val_p = interp_value(x_p, value_array, sg)
+        val_p = interp_subpath_value(x_p, x_p_subpath, value_array, sg)
 
         qval_a = cost_p + val_p
 
         if qval_a < qval_min
             qval_min = qval_a
-            ia_opt_ijk = ia
+            a_ind_opt = a_ind
         end
     end
 
     val_ijk = qval_min
    
-    return val_ijk, ia_opt_ijk
+    return val_ijk, a_ind_opt
 end
-
-
 
 # initialize arrays
 function initialize_value_array(sg, env, veh)
     value_array = zeros(Float64, length(sg.state_grid))
-    opt_ia_array = zeros(Int, length(sg.state_grid))
+    a_ind_opt_array = zeros(Int, length(sg.state_grid))
     set_array = zeros(Int, length(sg.state_grid))
 
     for ind_m in sg.ind_gs_array[1]
@@ -124,5 +121,5 @@ function initialize_value_array(sg, env, veh)
         end
     end
 
-    return value_array, opt_ia_array, set_array
+    return value_array, a_ind_opt_array, set_array
 end
