@@ -58,7 +58,7 @@ function fast_policy(x_k, Dt, value_array, a_ind_opt_array, veh, sg)
     
     nbr_indices_srt = view(nbr_indices, coord_srt)          # no alloc
 
-    a_ind_neighbor_srt_unq = opt_ia_array[nbr_indices]     # (!): 1 alloc 
+    a_ind_neighbor_srt_unq = opt_ia_array[nbr_indices_srt]     # (!): 1 alloc 
 
     unique!(ia_neighbor_srt_unq)                            # no alloc
 

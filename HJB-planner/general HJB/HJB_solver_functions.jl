@@ -75,8 +75,6 @@ function update_node_value(x, value_array, Dt, env, veh, sg)
     return val_x, a_ind_opt
 end
 
-
-
 # initialize arrays
 function initialize_value_array(sg, env, veh)
     value_array = zeros(Float64, length(sg.state_grid))
@@ -88,7 +86,7 @@ function initialize_value_array(sg, env, veh)
         x = sg.state_list_static[ind_s]
 
         if in_workspace(x, env, veh) == false || in_obstacle_set(x, env, veh) == true
-            value_array[ind_s] = 1e5
+            value_array[ind_s] = -1e6
             set_array[ind_s] = 0
         
         elseif in_target_set(x, env, veh) == true
@@ -96,7 +94,7 @@ function initialize_value_array(sg, env, veh)
             set_array[ind_s] = 1
         
         else
-            value_array[ind_s] = 1e5
+            value_array[ind_s] = -1e6
             set_array[ind_s] = 2
         end
     end
