@@ -60,40 +60,78 @@ using Random
 using Plots
 using BenchmarkTools
 
-include("utils.jl")
+using Pkg
+Pkg.develop(PackageSpec(path = "/Users/willpope/.julia/dev/BellmanPDEs"))
+using BellmanPDEs
 
 # define environment
-env_width = 5.5
-env_length = 11.0
+ws_width = 5.5
+ws_length = 11.0
 
 goal_positions = [[0.0, 0.0],
-        [env_width, 0.0],
-        [env_width, env_length],
-        [0.0, env_length]]
+        [ws_width, 0.0],
+        [ws_width, ws_length],
+        [0.0, ws_length]]
 
 # define vehicle and dynamics
 wheelbase = 0.324
 body_dims = [0.5207, 0.2762]
 origin_to_cent = [0.1715, 0.0]
-veh = define_vehicle(wheelbase, body_dims, origin_to_cent)
+phi_max = 0.475
+v_max = 2.0
+discount = 1.0
+veh = define_vehicle(wheelbase, body_dims, origin_to_cent, phi_max, v_max, discount)
 
-EoM = bicycle_4d_v_EoM
+# define action set
+function get_actions(x, Dt, veh)
+    # set change in velocity (Dv) limit
+    Dv_lim = 0.5
+
+    # set steering angle (phi) limit
+    Dtheta_lim = deg2rad(45)
+
+    v = x[4]
+    vp = v + Dv_lim
+    vn = v - Dv_lim
+
+    phi_lim = atan(Dtheta_lim * 1/Dt * 1/abs(v) * veh.l)
+    phi_lim = clamp(phi_lim, 0.0, veh.phi_max)
+
+    phi_lim_p = atan(Dtheta_lim * 1/Dt * 1/abs(vp) * veh.l)
+    phi_lim_p = clamp(phi_lim_p, 0.0, veh.phi_max)
+
+    phi_lim_n = atan(Dtheta_lim * 1/Dt * 1/abs(vn) * veh.l)
+    phi_lim_n = clamp(phi_lim_n, 0.0, veh.phi_max)
+
+    actions = SVector{5, SVector{2, Float64}}(
+        (-phi_lim, 0.0),       # Dv = 0.0
+        (-1/3*phi_lim, 0.0),
+        (0.0, 0.0),
+        (1/3*phi_lim, 0.0),
+        (phi_lim, 0.0))
+
+    ia_set = collect(1:length(actions))
+
+    return actions, ia_set
+end
 
 # plot environment and state x_0
 p1 = plot(getindex.(goal_positions,1), getindex.(goal_positions,2), label="Goals",
     aspect_ratio=:equal, size=(500,600), linewidth=0, 
-    markershape=:circle, markersize=5)
+    markershape=:circle, markersize=5,
+    xticks=0:1:6, yticks=0:1:10)
 
 
 # TO-DO: modify to use more general set calculation
 #   - shouldn't affect larger architecture
+#   - may need to pass in set from previous time step in order to propagate
 function generate_human_FRS(xy_human, v_human, Dt_obs_to_kd, goal_positions)
     reach_radius = v_human * Dt_obs_to_kd
 
     vertices = Vector{Vector{Float64}}(undef, length(goal_positions)+1)
-    for i in eachindex(goal_positions)
-        goal_vector = reach_radius * normalize(goal_positions[i] - xy_human)
-        vertices[i] = xy_human + goal_vector
+    for ig in axes(goal_positions, 1)
+        goal_vector = reach_radius * normalize(goal_positions[ig] - xy_human)
+        vertices[ig] = xy_human + goal_vector
     end
     vertices[end] = xy_human
 
@@ -113,15 +151,19 @@ function generate_human_FRS(xy_human, v_human, Dt_obs_to_kd, goal_positions)
     return F_human
 end
 
+
 function generate_human_FRS_sequence(nearby_human_positions, Dt_obs_to_k1, Dt_plan, Dt_divert, v_k2_max, Dv_max, v_human, goal_positions)
     # calculate steps for longest divert path
     Dv_divert = Dv_max * Dt_divert/Dt_plan
-    kd_stop_max = ceil((0.0 - v_k2_max)/(-Dv_divert))
+    kd_stop_max = ceil(Int, (0.0 - v_k2_max)/(-Dv_divert))
+
+    println("\nkd_stop_max = ", kd_stop_max)
 
     # generate human reachable sets at each divert time step
     F_seq = []
     for kd = 0:kd_stop_max
         Dt_obs_to_kd = Dt_obs_to_k1 + Dt_plan + kd*Dt_divert
+        println("kd = ", kd, ", Dt_obs_to_kd = ", Dt_obs_to_kd)
 
         F_all_k = []
         for xy_human in nearby_human_positions
@@ -137,19 +179,27 @@ function generate_human_FRS_sequence(nearby_human_positions, Dt_obs_to_k1, Dt_pl
 end
 
 
-# TO-DO: check that k_divert is accurate, especially for velocities/time steps that don't line up nicely
-
 # TO-DO: check HJB value at each step in divert path
 
 # ISSUE: Julia crashes when trying to use minkowski_sum() within shielding function
 #   - gen_FRS() function works fine with mink_sum() when used separately in command line
 
-function shield_action_set(x_k, ia_k, ia_set, actions, nearby_human_positions, Dt_obs_to_k1, Dt_plan, Dt_divert, phi_max, Dv_max, veh)
+function shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, get_actions::Function, Dt_plan, Dt_divert, phi_max, Dv_max, veh)
+    
+    
+    println("x_k = ", x_k)
+    println("a_k = ", actions[ia_k])
+    
+    # TO-DO: need to pull divert actions from actual action set at each state
+    #   - means need to call get_actions() from within divert path in order to get correct steering angles
+    #   - want divert actions to match actual layers in tree, plus still can't oversteer when turning car
+
     # 0: define divert actions
+    Dv_divert = Dv_max * Dt_divert/Dt_plan
     divert_actions = SVector{3, SVector{2, Float64}}(
-        (-phi_max, -Dv_max),
-        (0.0, -Dv_max),
-        (phi_max, -Dv_max))
+        (-phi_max, -Dv_divert),
+        (0.0, -Dv_divert),
+        (phi_max, -Dv_divert))
 
     iad_set = collect(1:length(divert_actions))
     
@@ -157,8 +207,10 @@ function shield_action_set(x_k, ia_k, ia_set, actions, nearby_human_positions, D
     a_k = actions[ia_k]
     x_k1, _ = propagate_state(x_k, a_k, Dt_plan, veh)
 
+    println("x_k1 = ", x_k1)
+
     # 2: generate human FRS sequence from t_k2 to t_stop_max
-    v_k2_max = x_k1[4] + Dv_max
+    v_k2_max = x_k1[4] + maximum(getindex.(actions, 2))
     F_seq = generate_human_FRS_sequence(nearby_human_positions, Dt_obs_to_k1, Dt_plan, Dt_divert, v_k2_max, Dv_max, v_human, goal_positions)
 
     # TEST ONLY ---
@@ -167,18 +219,20 @@ function shield_action_set(x_k, ia_k, ia_set, actions, nearby_human_positions, D
     # ---
 
     # 3: perform set check on all actions in standard POMDP action set
+    actions_k1, ia_set = get_actions(x_k1, Dt_plan, veh)
+
     ia_safe_set = []
 
     for ia_k1 in ia_set
         # propagate vehicle state to state x_k2
-        a_k1 = actions[ia_k1]
+        a_k1 = actions_k1[ia_k1]
         x_k2, _ = propagate_state(x_k1, a_k1, Dt_plan, veh)
 
         ia_k1_safe = false
 
         # calculate time needed for divert path from new state
         Dv_divert = Dv_max * Dt_divert/Dt_plan
-        kd_stop = ceil((0.0 - x_k2[4])/(-Dv_divert))
+        kd_stop = ceil(Int, (0.0 - x_k2[4])/(-Dv_divert))
 
         # TEST ONLY ---
         println("\na_k1 = ", a_k1)
@@ -191,6 +245,8 @@ function shield_action_set(x_k, ia_k, ia_set, actions, nearby_human_positions, D
         # iterate through divert steering angles
         for iad in shuffle(iad_set)
             ad = divert_actions[iad]
+
+            println("ad = ", ad)
 
             iad_safe = true
 
@@ -215,18 +271,18 @@ function shield_action_set(x_k, ia_k, ia_set, actions, nearby_human_positions, D
                 println("kd = ", kd, ", x_k = ", x_kd)
                 push!(divert_path, x_kd)
                 plot!(p1, getindex.(divert_path, 1), getindex.(divert_path, 2), label="")
-                plot!(p1, veh_body_k)
+                plot!(p1, veh_body_kd)
                 # ---
                 
                 humans_safe = true
-                for ih in axes(humans, 1)
+                for ih in axes(nearby_human_positions, 1)
                     
                     # TEST ONLY ---
-                    plot!(p1, [humans[h][1]], [humans[h][2]], label="", markershape=:circle, markersize=5)
-                    plot!(p1, F_hist[k+1][h], label="")
+                    plot!(p1, [nearby_human_positions[ih][1]], [nearby_human_positions[ih][2]], label="", markershape=:circle, markersize=5)
+                    plot!(p1, F_seq[kd+1][ih], label="")
                     # ---
 
-                    if isempty(intersection(veh_body_kd, F_hist[kd+1][ih])) == false || isempty(intersection(F_hist[kd+1][ih], veh_body_kd)) == false
+                    if isempty(intersection(veh_body_kd, F_seq[kd+1][ih])) == false || isempty(intersection(F_seq[kd+1][ih], veh_body_kd)) == false
                         # println("collision at k = ", k, ", x_k = ", x_k)
                         humans_safe = false
                         break
@@ -242,6 +298,13 @@ function shield_action_set(x_k, ia_k, ia_set, actions, nearby_human_positions, D
                     break
                 end
 
+                # ISSUE: applying smaller Dv at smaller time steps will produce a different path
+                #   - velocity is lower in "second half" of full size time step
+                #   - velocity approaches a ramp function as Dt_divert shrinks, needs to stay same
+                #   - may be easier to just use regular time step/action and return x_subpath for finer checking
+                #       - would need to match up x_subpath time steps with steps used to generate F_seq
+                #   - for now, just use Dt_divert=Dt_plan
+                
                 # propagate vehicle to next step along divert path
                 x_kd1, _ = propagate_state(x_kd, ad, Dt_divert, veh)
 
@@ -255,10 +318,11 @@ function shield_action_set(x_k, ia_k, ia_set, actions, nearby_human_positions, D
             end 
         end
 
+        println("ia_k1_safe = ", ia_k1_safe)
+
         # action is safe
         if ia_k1_safe == true
             push!(ia_safe_set, ia_k1)
-            break
         end
     end
 
@@ -275,27 +339,18 @@ nearby_human_positions = [[2.0, 7.5],
                         # [2.8, 5.1],
                         # [4.8, 4.6]]
 
+# (?): what upper bound velocity should be used here?
 v_human = 1.0
 
-# define vehicle action set
-phi_max = 0.475
-Dv_max = 0.5
-
-actions = SVector{3, SVector{2, Float64}}(
-    (-phi_max, 0.0),
-    (0.0, 0.0),
-    (phi_max, 0.0))
-
-ia_set = collect(1:length(actions))
 
 Dt_plan = 0.5
-Dt_divert = 0.25
+Dt_divert = 0.5
 
-x_k = SVector(2.5, 1.2, pi/2, 1.0)
+x_k = SVector(2.0, 2.0, pi*1/3, 1.5)
 ia_k = 2
-Dt_obs_to_k1 = 0.1
+Dt_obs_to_k1 = 0.0
         
-ia_safe_set = shield_action_set(x_k, ia_k, ia_set, actions, nearby_human_positions, Dt_obs_to_k1, Dt_plan, Dt_divert, phi_max, Dv_max, veh)
+ia_safe_set = shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, get_actions, Dt_plan, Dt_divert, phi_max, Dv_max, veh)
 
 # @btime shield_action_set($x_0, $actions, $Dt_plan, $Dt_divert, $v_max, $EoM, $veh)
 

@@ -43,8 +43,7 @@ body_dims = [1.0, 0.5]
 origin_to_cent = [0.375, 0.0]
 phi_max = 0.475
 v_max = 2.0
-discount = 1.0
-veh = define_vehicle(wheelbase, body_dims, origin_to_cent, phi_max, v_max, discount)
+veh = define_vehicle(wheelbase, body_dims, origin_to_cent, phi_max, v_max)
 
 Dt = 0.5
 
@@ -156,7 +155,6 @@ else
     @load path * "/bson/HJB_solution.bson" q_value_array value_array
 end
 
-# TO-DO: add discount to Bellman equation
 # TO-DO: see how HJB value compares with actual accumulated reward
 
 # planner
