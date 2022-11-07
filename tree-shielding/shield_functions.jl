@@ -180,11 +180,17 @@ end
 
 function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
     F_ih_seq = []
+    F_ih_body_seq = []
     
+    h_body = VPolyCircle([0.0, 0.0], 0.381)
+
     # create initial polygon from observed position
     x_ih_ks_points = [x_ih_obs]
     F_ih_ks = VPolygon(x_ih_ks_points)
     push!(F_ih_seq, F_ih_ks)
+
+    F_ih_body_ks1 = minkowski_sum(F_ih_ks1, h_body)
+    push!(F_ih_body_seq, F_ih_body_ks1)
 
     # propagate set through time steps
     for ks1 in 1:(2+kd_max)
@@ -201,14 +207,19 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
             end
         end
 
-        # create polygon at new time step
+        # create set polygons from propagated states
         F_ih_ks1 = VPolygon(x_ih_ks1_points)
         push!(F_ih_seq, F_ih_ks1)
 
-        # pass new polygon to next time step
-        F_ih_ks = F_ih_ks1
+        # ISSUE: msum looks too large at each time step
+        #   - need to push msum from initial state
+
+        F_ih_body_ks1 = minkowski_sum(F_ih_ks1, h_body)
+        push!(F_ih_body_seq, F_ih_body_ks1)
+
+        # pass states to next time step
         x_ih_ks_points = x_ih_ks1_points
     end
 
-    return F_ih_seq
+    return F_ih_seq, F_ih_body_seq
 end

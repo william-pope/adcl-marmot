@@ -142,8 +142,8 @@ path = "/Users/willpope/Desktop/Research/marmot-algs/package-test"
 solve_flag = 0
 plot_value = 0
 
-plan_flag = 0
-plot_path = 0
+plan_flag = 1
+plot_path = 1
 
 get_reward = get_POMDP_reward
 
@@ -160,6 +160,7 @@ end
 # planner
 if plan_flag == 1
     x_0 = SVector(2.0, 1.5, deg2rad(0), 0.0)
+    # x_0 = SVector(3.7293640695642387, 3.8202899763171203, 0.9675328760694839, 0.0)
     x_path_HJB, x_subpath_HJB, _, val_path_HJB = plan_path(x_0, HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
     x_path_aHJB, x_subpath_aHJB, _, val_path_aHJB = plan_path(x_0, approx_HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
     # x_path_RC, x_subpath_RC, _, val_path_RC = plan_path(x_0, reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
@@ -215,12 +216,33 @@ structure:
         - interp_value (x21):           349.815 ns  (5 allocations)
 =#
 
-x_k = SVector(8.1, 3.57, deg2rad(35), 1.5)
+# x_k = SVector(8.1, 3.57, deg2rad(35), 1.5)
 
-actions, ia_set = get_actions(x_k, Dt, veh)
+# actions, ia_set = get_actions(x_k, Dt, veh)
 
-# a_k = actions[7]
-Dv_RC = -0.5
+# # a_k = actions[7]
+# Dv_RC = -0.5
+
+
+# debugging issue with LazySets
+# veh_body = state_to_body_circle(x_k, veh)
+
+# works fine
+# in_target_set(x_k, env, veh)
+
+# works fine
+# in_workspace(x_k, env, veh)
+
+# ISSUE: in_obstacle_set() causes Julia to crash
+#   - comes from isempty() collision check line
+#   - can try isdisjoint() as alternative function
+#   - wonder if it's a type issue?
+
+# in_obstacle_set(x_k, env, veh)
+
+# using LazySets
+# isempty(intersection(env.obstacle_list[1], veh_body))
+
 
 # @btime discrete_time_EoM($x_k, $a_k, $Dt, $veh)
 
@@ -238,9 +260,9 @@ Dv_RC = -0.5
 
 # @btime get_actions($x_k, $Dt, $veh)
 
-@btime HJB_policy($x_k, $Dv_RC, $get_actions, $get_reward, $Dt, $q_value_array, $value_array, $veh, $sg)
+# @btime HJB_policy($x_k, $Dv_RC, $get_actions, $get_reward, $Dt, $q_value_array, $value_array, $veh, $sg)
 
-@btime approx_HJB_policy($x_k, $Dv_RC, $get_actions, $get_reward, $Dt, $q_value_array, $value_array, $veh, $sg)
+# @btime approx_HJB_policy($x_k, $Dv_RC, $get_actions, $get_reward, $Dt, $q_value_array, $value_array, $veh, $sg)
 
 # @btime reactive_policy($x_k, $Dv_RC, $get_actions, $get_reward, $Dt, $value_array, $veh, $sg)   
 
