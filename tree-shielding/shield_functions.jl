@@ -47,7 +47,7 @@ function shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_p
 
     # TEST ONLY ---
     if test == true
-        println("x_k1 = ", x_k1)
+        # println("x_k1 = ", x_k1)
 
         plot!(p1, [x_k1[1]], [x_k1[2]], markercolor=:black, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
         plot!(p1, state_to_body(x_k1, veh))

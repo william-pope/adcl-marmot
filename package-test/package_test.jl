@@ -139,11 +139,11 @@ end
 # MAIN ---
 path = "/Users/willpope/Desktop/Research/marmot-algs/package-test"
 
-solve_flag = 1
-plot_value = 1
+solve_flag = 0
+plot_value = 0
 
-plan_flag = 1
-plot_path = 1
+plan_flag = 0
+plot_path = 0
 
 get_reward = get_POMDP_reward
 
@@ -161,8 +161,9 @@ end
 if plan_flag == 1
     x_0 = SVector(2.0, 1.5, deg2rad(0), 0.0)
     x_path_HJB, x_subpath_HJB, _, val_path_HJB = plan_path(x_0, HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
-    x_path_RC, x_subpath_RC, _, val_path_RC = plan_path(x_0, reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
-    x_path_APX, x_subpath_APX, _, val_path_APX = plan_path(x_0, approx_reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    x_path_aHJB, x_subpath_aHJB, _, val_path_aHJB = plan_path(x_0, approx_HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    # x_path_RC, x_subpath_RC, _, val_path_RC = plan_path(x_0, reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    # x_path_aRC, x_subpath_aRC, _, val_path_aRC = plan_path(x_0, approx_reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
 end
 
 # plotting
@@ -172,11 +173,16 @@ if plot_value == 1
 end
 
 if plot_path == 1
-    plot_path_value([val_path_HJB, val_path_RC, val_path_APX], Dt)
+    label_list = ["Optimal", "Approx Optimal", "Reactive", "Approx Reactive"]
+
+    # plot_path_value([val_path_HJB, val_path_aHJB, val_path_RC, val_path_aRC], Dt)
 
     linez_clim = 2.5
-    plot_HJB_path([x_path_HJB, x_path_RC, x_path_APX], [x_subpath_HJB, x_subpath_RC, x_subpath_APX], env, veh, linez_clim)
+    plot_HJB_path([x_path_HJB, x_path_aHJB], [x_subpath_HJB, x_subpath_aHJB], env, veh, linez_clim, label_list)
 end
+
+# , x_path_RC, x_path_aRC
+# , x_subpath_RC, x_subpath_aRC
 
 # benchmarking
 #=
@@ -196,6 +202,7 @@ improved performance:
 - optimize_action:      9.603 us    (78 allocations) [21 actions] [basically as good as possible]
 - get_actions:          49.795 ns   (0 allocations)
 - HJB_policy:           10.040 us   (85 allocations) [21 actions]
+- approx_HJB_policy:    1.388 us    (23 allocations) [21 actions]
 - reactive_policy:      4.285 us    (42 allocations) [21->7 actions]
 - approx_policy:        1.430 us    (19 allocations) [21->1 actions, 2^4 neighbors]
 
@@ -231,7 +238,9 @@ Dv_RC = -0.5
 
 # @btime get_actions($x_k, $Dt, $veh)
 
-# @btime HJB_policy($x_k, $get_actions, $get_reward, $Dt, $value_array, $veh, $sg)
+@btime HJB_policy($x_k, $Dv_RC, $get_actions, $get_reward, $Dt, $q_value_array, $value_array, $veh, $sg)
+
+@btime approx_HJB_policy($x_k, $Dv_RC, $get_actions, $get_reward, $Dt, $q_value_array, $value_array, $veh, $sg)
 
 # @btime reactive_policy($x_k, $Dv_RC, $get_actions, $get_reward, $Dt, $value_array, $veh, $sg)   
 

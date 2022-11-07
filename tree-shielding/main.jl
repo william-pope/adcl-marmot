@@ -11,17 +11,14 @@
 #   - inputs: human observation, Dt_obs_to_k1, vehicle state
 
 # need to collision-check for:
-#   - every next state sp (~10)
+#   - every action a_k1 (~10)
 #       - every divert trajectory (3)
 #           - every time step (~5)
 #               - every pedestrian set (~6)
 
 # assumed parameters:
-#   - vehicle top speed: 2.0 m/s (this shouldn't matter)
-#   - vehicle max brake: -0.5 m/s (same as POMDP) (although would make sense to include as a harder brake?)
-#   - human speed: 1 m/s
-
-
+#   - vehicle max brake: -0.5 m/s (same as POMDP) (although would make sense to include a harder brake?)
+#   - human speed: 1.0 m/s
 
 #=
 notional architecture:
@@ -53,6 +50,8 @@ end
 #       - 0/9 safe: 192.423 us, 3069 allocations
 
 #   - updated version -> still <500 us
+
+#   - with generalized set prop -> 2.15 ms, 10499 allocations
 
 using LazySets
 using LinearAlgebra
@@ -137,7 +136,7 @@ v_human = 1.0
 
 Dt_plan = 0.5
 
-x_k = SVector(2.0, 1.0, pi*2/3, 1.0)
+x_k = SVector(2.0, 2.0, pi*1/3, 1.0)
 ia_k = 5
 Dt_obs_to_k1 = 0.12
    
