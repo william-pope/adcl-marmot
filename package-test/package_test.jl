@@ -12,9 +12,6 @@ ws_width = 20.0
 ws_length = 20.0
 workspace = VPolygon([[0.0, 0.0], [ws_width, 0.0], [ws_width, ws_length], [0.0, ws_length]])
 
-ws_width = 5.515
-ws_length = 
-
 # # standard circular obstacles
 # obstacle_list = [VPolyCircle([2.5, 3.0], 0.5), 
 #                 VPolyCircle([3.7, 7.5], 0.5),
