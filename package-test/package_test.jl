@@ -12,6 +12,9 @@ ws_width = 20.0
 ws_length = 20.0
 workspace = VPolygon([[0.0, 0.0], [ws_width, 0.0], [ws_width, ws_length], [0.0, ws_length]])
 
+ws_width = 5.515
+ws_length = 
+
 # # standard circular obstacles
 # obstacle_list = [VPolyCircle([2.5, 3.0], 0.5), 
 #                 VPolyCircle([3.7, 7.5], 0.5),
@@ -159,12 +162,33 @@ end
 
 # planner
 if plan_flag == 1
-    x_0 = SVector(2.0, 1.5, deg2rad(0), 0.0)
-    # x_0 = SVector(3.7293640695642387, 3.8202899763171203, 0.9675328760694839, 0.0)
+    # x_0_list = [SVector(2.0, 1.5, deg2rad(15), 0.0),
+    #             SVector(3.0, 11.5, deg2rad(105), 2.0),
+    #             SVector(14.0, 4.5, deg2rad(-60), 0.5),
+    #             SVector(10.0, 1.5, deg2rad(90), 1.0)]
+
+    # label_list = ["", "", "", ""]
+
+    # x_path_HJB_1, x_subpath_HJB_1, _, val_path_HJB_1 = plan_path(x_0_list[1], HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    # x_path_HJB_2, x_subpath_HJB_2, _, val_path_HJB_2 = plan_path(x_0_list[2], HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    # x_path_HJB_3, x_subpath_HJB_3, _, val_path_HJB_3 = plan_path(x_0_list[3], HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    # x_path_HJB_4, x_subpath_HJB_4, _, val_path_HJB_4 = plan_path(x_0_list[4], HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+
+    # path_list = [x_path_HJB_1, x_path_HJB_2, x_path_HJB_3, x_path_HJB_4]
+    # subpath_list = [x_subpath_HJB_1, x_subpath_HJB_2, x_subpath_HJB_3, x_subpath_HJB_4]
+    # val_path = [val_path_HJB_1, val_path_HJB_2, val_path_HJB_3, val_path_HJB_4]
+
+    
+    # x_0 = SVector(2.0, 1.5, deg2rad(0), 0.0)
+    x_0 = SVector(1.8956199596166858, 2.076323753226284, 2.4061404910428497, 1.0)
+    label_list = ["Optimal", "Approx Optimal", "Reactive", "Approx Reactive"]
     x_path_HJB, x_subpath_HJB, _, val_path_HJB = plan_path(x_0, HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
     x_path_aHJB, x_subpath_aHJB, _, val_path_aHJB = plan_path(x_0, approx_HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
     # x_path_RC, x_subpath_RC, _, val_path_RC = plan_path(x_0, reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
     # x_path_aRC, x_subpath_aRC, _, val_path_aRC = plan_path(x_0, approx_reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    path_list = [x_path_HJB, x_path_aHJB]#, x_path_RC, x_path_aRC]
+    subpath_list = [x_subpath_HJB, x_subpath_aHJB]#, x_subpath_RC, x_subpath_aRC]
+    val_path = [val_path_HJB, val_path_aHJB]#, val_path_RC, val_path_aRC]
 end
 
 # plotting
@@ -174,12 +198,10 @@ if plot_value == 1
 end
 
 if plot_path == 1
-    label_list = ["Optimal", "Approx Optimal", "Reactive", "Approx Reactive"]
-
     # plot_path_value([val_path_HJB, val_path_aHJB, val_path_RC, val_path_aRC], Dt)
 
     linez_clim = 2.5
-    plot_HJB_path([x_path_HJB, x_path_aHJB], [x_subpath_HJB, x_subpath_aHJB], env, veh, linez_clim, label_list)
+    plot_HJB_path(path_list, subpath_list, env, veh, linez_clim, label_list)
 end
 
 # , x_path_RC, x_path_aRC
