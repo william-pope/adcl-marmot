@@ -11,7 +11,7 @@
 # TO-DO: configure inputs for POMDP integration
 #   - create separate copy of code
 
-function shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_plan, get_actions::Function, veh)
+function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, get_actions::Function, veh)
     test = true
 
     # TEST ONLY ---
@@ -29,12 +29,6 @@ function shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_p
     # define divert actions (hard-coded)
     ia_divert_set = [1, 2, 3]
     Dv_max = 0.5    # NOTE: this should be pulled from one of the param structs
-    
-    # propagate vehicle to state x_k1
-    actions_k, _ = get_actions(x_k, Dt_plan, veh)
-    
-    a_k = actions_k[ia_k]
-    x_k1, _ = propagate_state(x_k, a_k, Dt_plan, veh)
 
     # generate human FRS sequence from t_k2 to t_stop_max
     actions_k1, ia_k1_set = get_actions(x_k1, Dt_plan, veh)

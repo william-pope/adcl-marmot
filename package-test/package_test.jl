@@ -42,14 +42,14 @@ body_dims = [0.5207, 0.2762]
 origin_to_cent = [0.1715, 0.0]
 
 phi_max = 0.475
-v_max = 1.5
+v_max = 2.0
 veh = define_vehicle(wheelbase, body_dims, origin_to_cent, phi_max, v_max)
 
 Dt = 0.5
 
 # define state grid
 state_space = [[0.0, ws_width], [0.0, ws_length], [-pi, pi], [0.0, v_max]]
-dx_sizes = [1/4, 1/4, deg2rad(15.0), 1/4]
+dx_sizes = [1/4, 1/4, deg2rad(15.0), 1/3]
 angle_wrap = [false, false, true, false]
 sg = define_state_grid(state_space, dx_sizes, angle_wrap)
 
@@ -61,7 +61,7 @@ max_solve_steps = 500
 safe_value_lim = 800.0
 max_plan_steps = 500
 
-# define action set
+# define action set  
 function get_actions(x, Dt, veh)
     # set change in velocity (Dv) limit
     Dv_lim = 0.5
@@ -140,8 +140,8 @@ end
 # MAIN ---
 path = "/Users/willpope/Desktop/Research/marmot-algs/package-test"
 
-solve_flag = 1
-plot_value = 1
+solve_flag = 0
+plot_value = 0
 
 plan_flag = 1
 plot_path = 1
@@ -181,7 +181,7 @@ if plan_flag == 1
 
     
     # x_0 = SVector(2.0, 1.5, deg2rad(0), 0.0)
-    x_0 = SVector(1.228415289351058, 2.2336253773220505, 2.600813217406559, 0.5)
+    x_0 = SVector(4.436503864687015, 9.968943741596705, 1.299297254993815, 2.0)
     label_list = ["Optimal", "Approx Optimal", "Reactive", "Approx Reactive"]
 
     x_path_HJB, x_subpath_HJB, a_path_HJB, val_path_HJB = plan_path(x_0, HJB_policy, safe_value_lim, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)

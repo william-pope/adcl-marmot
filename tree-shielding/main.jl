@@ -145,7 +145,7 @@ Dt_plan = 0.5
 
 x_k = SVector(2.0, 2.0, pi*1/3, 1.0)
 ia_k = 5
-Dt_obs_to_k1 = 0.12
+Dt_obs_to_k1 = 0.0
 
 # TO-DO: improve plots
 #   - make them match normal environment, use 20x20
