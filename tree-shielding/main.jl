@@ -68,8 +68,8 @@ include("shield_functions.jl")
 include("shield_utils.jl")
 
 # define environment
-ws_width = 5.5
-ws_length = 11.0
+ws_width = 20.0
+ws_length = 20.0
 
 goal_positions = [[0.0, 0.0],
                 [ws_width, 0.0],
@@ -77,9 +77,14 @@ goal_positions = [[0.0, 0.0],
                 [0.0, ws_length]]
 
 # define vehicle and dynamics
-wheelbase = 0.324
-body_dims = [0.5207, 0.2762]
-origin_to_cent = [0.1715, 0.0]
+wheelbase = 0.75
+body_dims = [1.0, 0.5]
+origin_to_cent = [0.375, 0.0]
+
+# wheelbase = 0.324
+# body_dims = [0.5207, 0.2762]
+# origin_to_cent = [0.1715, 0.0]
+
 phi_max = 0.475
 v_max = 2.0
 veh = define_vehicle(wheelbase, body_dims, origin_to_cent, phi_max, v_max)
@@ -125,12 +130,14 @@ end
 
 
 # define human positions and velocity
-nearby_human_positions = [[2.0, 7.5],
-                        [4.5, 6.0],
-                        [4.3, 8.4],
-                        [4.6, 3.2],
-                        [2.8, 5.1],
-                        [4.8, 4.6]]
+nearby_human_positions = [[2.0, 7.5]]
+# ,
+#                         [4.5, 6.0],
+#                         [4.3, 8.4]]
+                        # ,
+                        # [4.6, 3.2],
+                        # [2.8, 5.1],
+                        # [4.8, 4.6]]
 
 v_human = 1.0
 
@@ -139,24 +146,40 @@ Dt_plan = 0.5
 x_k = SVector(2.0, 2.0, pi*1/3, 1.0)
 ia_k = 5
 Dt_obs_to_k1 = 0.12
+
+# TO-DO: improve plots
+#   - make them match normal environment, use 20x20
+#   - need to be readable/explainable
+#   - would be good to show size of human radius (on a separate plot though)
+#   - changes:
+#       - only show one vehicle body at current time step, use dots to represent past states
+#       - remove old sets from plot, start fresh for each divert path
+
+# TO-DO: modify velocity to 1.05 m/s
+
+# TO-DO: would really like to check on smaller time intervals
+#   - otherwise difficult to argue for safety
+
+
+
    
-# ia_k1_safe_set = shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_plan, get_actions, veh)
+# ia_k1_safe_set = 
+ia_safe_set = shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_plan, get_actions, veh)
 
 # @btime shield_action_set($x_k, $ia_k, $nearby_human_positions, $Dt_obs_to_k1, $Dt_plan, $get_actions, $veh)
 
+# x_ih_ks1 = nearby_human_positions[2]
+# x_ih_obs = x_ih_ks1
 
-x_ih_ks1 = nearby_human_positions[2]
-x_ih_obs = x_ih_ks1
+# ig = 1
+# Dt = 0.5
 
-ig = 1
-Dt = 0.5
-
-Dv_max = 0.5
-v_k2_max = 1.5
-kd_max = ceil(Int, (0.0 - v_k2_max)/(-Dv_max))
+# Dv_max = 0.5
+# v_k2_max = 1.5
+# kd_max = ceil(Int, (0.0 - v_k2_max)/(-Dv_max))
 
 # x_ih_ks2 = propagate_human(x_ih_ks1, ig, Dt, v_human, goal_positions)
 
-F_ih_seq, F_ih_body_seq = generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
+# F_ih_seq, F_ih_body_seq = generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
 
 # F_all_seq = generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)

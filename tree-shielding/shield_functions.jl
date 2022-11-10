@@ -12,7 +12,7 @@
 #   - create separate copy of code
 
 function shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_plan, get_actions::Function, veh)
-    test = false
+    test = true
 
     # TEST ONLY ---
     if test == true
@@ -43,7 +43,7 @@ function shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_p
 
     # println("kd_max = ", kd_max)
 
-    F_all_seq = generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
+    F_all_body_seq = generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
 
     # TEST ONLY ---
     if test == true
@@ -109,17 +109,22 @@ function shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_p
                 
                 humans_safe = true
                 for ih in axes(nearby_human_positions, 1)
-                    F_ih_kd = F_all_seq[ih][3+kd]
+                    F_ih_body_kd = F_all_body_seq[ih][3+kd]
                     
                     # TEST ONLY ---
                     if test == true
                         plot!(p1, [nearby_human_positions[ih][1]], [nearby_human_positions[ih][2]], label="", markershape=:circle, markersize=5)
-                        plot!(p1, F_ih_kd, label="")
+                        plot!(p1, F_ih_body_kd, label="")
                     end
                     # ---
 
-                    if isempty(intersection(veh_body_kd, F_ih_kd)) == false || isempty(intersection(F_ih_kd, veh_body_kd)) == false
-                        # println("collision at kd = ", kd, ", x_kd = ", x_kd)
+                    # if isempty(intersection(veh_body_kd, F_ih_body_kd)) == false || isempty(intersection(F_ih_body_kd, veh_body_kd)) == false
+                    #     # println("collision at kd = ", kd, ", x_kd = ", x_kd)
+                    #     humans_safe = false
+                    #     break
+                    # end
+
+                    if isdisjoint(veh_body_kd, F_ih_body_kd) == false
                         humans_safe = false
                         break
                     end
@@ -166,16 +171,16 @@ function shield_action_set(x_k, ia_k, nearby_human_positions, Dt_obs_to_k1, Dt_p
 end
 
 function generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
-    F_all_seq = []
+    F_all_body_seq = []
 
     # generate FRS sequences for each nearby human
     for x_ih_obs in nearby_human_positions
-        F_ih_seq = generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
+        F_ih_seq, F_ih_body_seq = generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
         
-        push!(F_all_seq, F_ih_seq)
+        push!(F_all_body_seq, F_ih_body_seq)
     end
 
-    return F_all_seq
+    return F_all_body_seq
 end
 
 function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
@@ -189,8 +194,8 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
     F_ih_ks = VPolygon(x_ih_ks_points)
     push!(F_ih_seq, F_ih_ks)
 
-    F_ih_body_ks1 = minkowski_sum(F_ih_ks1, h_body)
-    push!(F_ih_body_seq, F_ih_body_ks1)
+    F_ih_body_ks = minkowski_sum(F_ih_ks, h_body)
+    push!(F_ih_body_seq, F_ih_body_ks)
 
     # propagate set through time steps
     for ks1 in 1:(2+kd_max)
@@ -210,9 +215,6 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
         # create set polygons from propagated states
         F_ih_ks1 = VPolygon(x_ih_ks1_points)
         push!(F_ih_seq, F_ih_ks1)
-
-        # ISSUE: msum looks too large at each time step
-        #   - need to push msum from initial state
 
         F_ih_body_ks1 = minkowski_sum(F_ih_ks1, h_body)
         push!(F_ih_body_seq, F_ih_body_ks1)

@@ -8,48 +8,48 @@ using BenchmarkTools
 using BSON: @save, @load
 
 # define environment (workspace, obstacles, goal)
-ws_width = 20.0
-ws_length = 20.0
+# ws_width = 20.0
+# ws_length = 20.0
+
+ws_width = 5.5
+ws_length = 11.0
+
 workspace = VPolygon([[0.0, 0.0], [ws_width, 0.0], [ws_width, ws_length], [0.0, ws_length]])
 
-# # standard circular obstacles
-# obstacle_list = [VPolyCircle([2.5, 3.0], 0.5), 
-#                 VPolyCircle([3.7, 7.5], 0.5),
-#                 VPolyCircle([5.9, 4.8], 0.5)]
+# ASPEN lab
+obstacle_list = [VPolyCircle([3.2, 4.1], 0.75), 
+                VPolyCircle([2.2, 7.5], 0.75)]
 
-# goal = VPolyCircle([1/2*ws_width, ws_length-0.75], 0.75)
+goal = VPolyCircle([2.75, 10.5], 0.75)
 
-# local minima
-# obstacle_list = [VPolygon([[2.0, 6.0], [6.0, 6.0], [6.0, 7.0], [2.0, 7.0]]),
-#                 VPolygon([[1.0, 4.0], [2.0, 4.0], [2.0, 6.0], [1.0, 6.0]]),
-#                 VPolygon([[6.0, 4.0], [7.0, 4.0], [7.0, 6.0], [6.0, 6.0]])]
+# # 20x20 environment
+# obstacle_list = [VPolyCircle([5.125, 4.875], 1.125), 
+#                 VPolyCircle([6.5, 15.25], 1.5),
+#                 VPolyCircle([16.25, 11.0], 1.125),
+#                 VPolyCircle([10.0, 9.5], 2.25)]
 
-# 20x20 environment
-obstacle_list = [VPolyCircle([5.125, 4.875], 1.125), 
-                VPolyCircle([6.5, 15.25], 1.5),
-                VPolyCircle([16.25, 11.0], 1.125),
-                VPolyCircle([10.0, 9.5], 2.25)]
-
-goal = VPolyCircle([2/3*ws_width, ws_length-1.2], 1.2)
-
-# empty
-# obstacle_list = []     
+# goal = VPolyCircle([2/3*ws_width, ws_length-1.2], 1.2)
 
 env = define_environment(workspace, obstacle_list, goal)
 
 # define vehicle and dynamics
-wheelbase = 0.75
-body_dims = [1.0, 0.5]
-origin_to_cent = [0.375, 0.0]
+# wheelbase = 0.75
+# body_dims = [1.0, 0.5]
+# origin_to_cent = [0.375, 0.0]
+
+wheelbase = 0.324
+body_dims = [0.5207, 0.2762]
+origin_to_cent = [0.1715, 0.0]
+
 phi_max = 0.475
-v_max = 2.0
+v_max = 1.5
 veh = define_vehicle(wheelbase, body_dims, origin_to_cent, phi_max, v_max)
 
 Dt = 0.5
 
 # define state grid
 state_space = [[0.0, ws_width], [0.0, ws_length], [-pi, pi], [0.0, v_max]]
-dx_sizes = [1/2, 1/2, deg2rad(22.5), 1/3]
+dx_sizes = [1/4, 1/4, deg2rad(15.0), 1/4]
 angle_wrap = [false, false, true, false]
 sg = define_state_grid(state_space, dx_sizes, angle_wrap)
 
@@ -58,7 +58,8 @@ Dval_tol = 0.01
 max_solve_steps = 500
 
 # planner params
-max_plan_steps = 2e3
+safe_value_lim = 800.0
+max_plan_steps = 500
 
 # define action set
 function get_actions(x, Dt, veh)
@@ -139,8 +140,8 @@ end
 # MAIN ---
 path = "/Users/willpope/Desktop/Research/marmot-algs/package-test"
 
-solve_flag = 0
-plot_value = 0
+solve_flag = 1
+plot_value = 1
 
 plan_flag = 1
 plot_path = 1
@@ -161,8 +162,11 @@ end
 if plan_flag == 1
     # x_0_list = [SVector(2.0, 1.5, deg2rad(15), 0.0),
     #             SVector(3.0, 11.5, deg2rad(105), 2.0),
-    #             SVector(14.0, 4.5, deg2rad(-60), 0.5),
-    #             SVector(10.0, 1.5, deg2rad(90), 1.0)]
+    #             SVector(2.0, 1.5, deg2rad(15), 0.0),
+    #             SVector(3.0, 11.5, deg2rad(105), 2.0)]
+    #             # ,
+    #             # SVector(14.0, 4.5, deg2rad(-60), 0.5),
+    #             # SVector(8.0, 1.5, deg2rad(90), 1.0)]
 
     # label_list = ["", "", "", ""]
 
@@ -171,26 +175,39 @@ if plan_flag == 1
     # x_path_HJB_3, x_subpath_HJB_3, _, val_path_HJB_3 = plan_path(x_0_list[3], HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
     # x_path_HJB_4, x_subpath_HJB_4, _, val_path_HJB_4 = plan_path(x_0_list[4], HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
 
-    # path_list = [x_path_HJB_1, x_path_HJB_2, x_path_HJB_3, x_path_HJB_4]
-    # subpath_list = [x_subpath_HJB_1, x_subpath_HJB_2, x_subpath_HJB_3, x_subpath_HJB_4]
+    # x_path_list = [x_path_HJB_1, x_path_HJB_2, x_path_HJB_3, x_path_HJB_4]
+    # x_subpath_list = [x_subpath_HJB_1, x_subpath_HJB_2, x_subpath_HJB_3, x_subpath_HJB_4]
     # val_path = [val_path_HJB_1, val_path_HJB_2, val_path_HJB_3, val_path_HJB_4]
 
     
     # x_0 = SVector(2.0, 1.5, deg2rad(0), 0.0)
-    x_0 = SVector(1.8956199596166858, 2.076323753226284, 2.4061404910428497, 1.0)
+    x_0 = SVector(1.228415289351058, 2.2336253773220505, 2.600813217406559, 0.5)
     label_list = ["Optimal", "Approx Optimal", "Reactive", "Approx Reactive"]
-    x_path_HJB, x_subpath_HJB, _, val_path_HJB = plan_path(x_0, HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
-    x_path_aHJB, x_subpath_aHJB, _, val_path_aHJB = plan_path(x_0, approx_HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
-    # x_path_RC, x_subpath_RC, _, val_path_RC = plan_path(x_0, reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+
+    x_path_HJB, x_subpath_HJB, a_path_HJB, val_path_HJB = plan_path(x_0, HJB_policy, safe_value_lim, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    # x_path_aHJB, x_subpath_aHJB, a_path_aHJB, val_path_aHJB = plan_path(x_0, approx_HJB_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
+    # x_path_RC, x_subpath_RC, a_path_RC, val_path_RC = plan_path(x_0, reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
     # x_path_aRC, x_subpath_aRC, _, val_path_aRC = plan_path(x_0, approx_reactive_policy, get_actions, get_reward, Dt, q_value_array, value_array, env, veh, sg, max_plan_steps)
-    path_list = [x_path_HJB, x_path_aHJB]#, x_path_RC, x_path_aRC]
-    subpath_list = [x_subpath_HJB, x_subpath_aHJB]#, x_subpath_RC, x_subpath_aRC]
-    val_path = [val_path_HJB, val_path_aHJB]#, val_path_RC, val_path_aRC]
+    
+    # # x_path_list = [x_path_HJB, x_path_aHJB, x_path_RC, x_path_aRC]
+    # # x_subpath_list = [x_subpath_HJB, x_subpath_aHJB, x_subpath_RC, x_subpath_aRC]
+    # # a_path_list = [a_path_HJB, a_path_aHJB, x_path_RC, x_path_aRC]
+    # # val_path_list = [val_path_HJB, val_path_aHJB, val_path_RC, val_path_aRC]
+
+    # x_path_list = [x_path_HJB, x_path_RC]
+    # x_subpath_list = [x_subpath_HJB, x_subpath_RC]
+    # a_path_list = [a_path_HJB, x_path_RC]
+    # val_path_list = [val_path_HJB, val_path_RC]
+
+    x_path_list = [x_path_HJB]
+    x_subpath_list = [x_subpath_HJB]
+    a_path_list = [a_path_HJB]
+    val_path_list = [val_path_HJB]
 end
 
 # plotting
 if plot_value == 1
-    heatmap_clim = -15
+    heatmap_clim = -1000
     plot_HJB_value(value_array, env, veh, sg, heatmap_clim)
 end
 
@@ -198,8 +215,11 @@ if plot_path == 1
     # plot_path_value([val_path_HJB, val_path_aHJB, val_path_RC, val_path_aRC], Dt)
 
     linez_clim = 2.5
-    plot_HJB_path(path_list, subpath_list, env, veh, linez_clim, label_list)
+    plot_HJB_path(x_path_list, x_subpath_list, env, veh, linez_clim, label_list)
 end
+
+x_0 = SVector(0.8880301640206844, 6.845218257186377, 1.5712316080786972, 1.0)
+a, qvals = HJB_policy(x_0, 0.5, 800.0, get_actions, get_reward, Dt, q_value_array, value_array, veh, sg)
 
 # , x_path_RC, x_path_aRC
 # , x_subpath_RC, x_subpath_aRC
