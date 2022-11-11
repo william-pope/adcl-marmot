@@ -11,7 +11,7 @@
 # TO-DO: configure inputs for POMDP integration
 #   - create separate copy of code
 
-function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, get_actions::Function, veh)
+function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, get_actions::Function, veh, human_goal_positions, m)
     test = false
 
     # TEST ONLY ---
@@ -26,12 +26,13 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
     Dv_max = 0.5    # NOTE: this should be pulled from one of the param structs
 
     # generate each human FRS sequence from t_k2 to t_stop_max
-    actions_k1, ia_k1_set, _ = get_actions(x_k1, Dt_plan, veh)
+    actions_k1, ia_k1_set, _ = get_actions(x_k1, Dt_plan, veh, m)
 
     v_k2_max = x_k1[4] + maximum(getindex.(actions_k1, 2))      # ISSUE: can reach over v_max=2.0 m/s limit
     kd_max = ceil(Int, (0.0 - v_k2_max)/(-Dv_max)) - 1
 
-    F_all_body_seq = generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
+    v_human = 1.25
+    F_all_body_seq = generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_human, human_goal_positions, kd_max)
 
     # TEST ONLY ---
     if test == true
@@ -98,11 +99,11 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
                     plot!(p1, veh_body_cir_kd)
                 end
                 # ---
-                
+
                 humans_safe = true
                 for ih in axes(nearby_human_positions, 1)
                     F_ih_body_kd = F_all_body_seq[ih][3+kd]
-                    
+
                     # TEST ONLY ---
                     if test == true
                         plot!(p1, [nearby_human_positions[ih][1]], [nearby_human_positions[ih][2]], label="", markershape=:circle, markersize=5)
@@ -126,9 +127,9 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
                     dpath_safe = false
                     break
                 end
-                
+
                 # propagate vehicle to next step along divert path
-                actions_kd, _, ia_divert_set = get_actions(x_kd, Dt_plan, veh)
+                actions_kd, _, ia_divert_set = get_actions(x_kd, Dt_plan, veh, m)
                 ia_d = ia_divert_set[dpath]
                 a_d = actions_kd[ia_d]
 
@@ -137,7 +138,7 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
                 # TEST ONLY ---
                 if test == true
                     println("a_d = ", a_d)
-                end 
+                end
                 # ---
 
                 # pass state to next step
@@ -147,13 +148,13 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
             if dpath_safe == true
                 ia_k1_safe = true
                 break
-            end 
+            end
         end
 
         # TEST ONLY ---
         if test == true
             println("ia_k1_safe = ", ia_k1_safe)
-        end 
+        end
         # ---
 
         # action is safe
@@ -162,7 +163,7 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
         end
     end
 
-    return ia_k1_safe_set
+    return actions_k1[ia_k1_safe_set], ia_k1_safe_set
 end
 
 function generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
@@ -171,7 +172,7 @@ function generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_hum
     # generate FRS sequences for each nearby human
     for x_ih_obs in nearby_human_positions
         F_ih_seq, F_ih_body_seq = generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
-        
+
         push!(F_all_body_seq, F_ih_body_seq)
     end
 
@@ -183,7 +184,7 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
 
     F_ih_seq = []
     F_ih_body_seq = []
-    
+
     h_body = VPolyCircle([0.0, 0.0], 0.381)
 
     # create initial polygon from observed position
@@ -191,19 +192,20 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
     F_ih_ks = VPolygon(x_ih_ks_points)
     push!(F_ih_seq, F_ih_ks)
 
-    F_ih_body_ks = minkowski_sum(F_ih_ks, h_body)
+    F_ih_body_ks = F_ih_ks
+    # F_ih_body_ks = minkowski_sum(F_ih_ks, h_body)
     push!(F_ih_body_seq, F_ih_body_ks)
 
     # TEST ONLY ---
     if test == true
         p_F = plot(getindex.(goal_positions,1), getindex.(goal_positions,2), label="Goals",
             aspect_ratio=:equal, size=(800,800), dpi=300,
-            linewidth=0, 
+            linewidth=0,
             markershape=:circle, markersize=5,
             xticks=0:1:20, yticks=0:1:20)
 
         scatter!(p_F, getindex.(x_ih_ks_points, 1), getindex.(x_ih_ks_points, 2),
-            markersize=2, 
+            markersize=2,
             label="")
 
         ks = 0
@@ -212,7 +214,7 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
         display("image/png", p_F)
 
         plot!(p_F, F_ih_body_ks,
-            label="")  
+            label="")
 
         display("image/png", p_F)
     end
@@ -224,11 +226,11 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
 
         ks1 == 1 ? Dt = Dt_obs_to_k1 : Dt = Dt_plan
 
-        # apply all actions to each vertex of current set polygon 
+        # apply all actions to each vertex of current set polygon
         for x_ih_ks in x_ih_ks_points
             for ig in axes(goal_positions, 1)
                 x_ih_ks1 = propagate_human(x_ih_ks, ig, Dt, v_human, goal_positions)
-                
+
                 push!(x_ih_ks1_points, x_ih_ks1)
             end
         end
@@ -243,7 +245,7 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
         # TEST ONLY ---
         if test == true
             scatter!(p_F, getindex.(x_ih_ks1_points, 1), getindex.(x_ih_ks1_points, 2),
-                markersize=2, 
+                markersize=2,
                 label="")
 
             annotate!(10.0+ks1, 5.0, ks1)
@@ -251,7 +253,7 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
             display("image/png", p_F)
 
             plot!(p_F, F_ih_body_ks1,
-                label="")  
+                label="")
 
             display("image/png", p_F)
         end

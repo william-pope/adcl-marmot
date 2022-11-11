@@ -6,8 +6,8 @@ function propagate_human(x_ih_k, ig, Dt, v_human, goal_positions)
     yp_ih_k = x_ih_k[2]
 
     # pull out chosen goal location
-    xpg = goal_positions[ig][1]
-    ypg = goal_positions[ig][2]
+    xpg = goal_positions[ig].x
+    ypg = goal_positions[ig].y
 
     # calculate derivative at current state
     C_x = ((xpg-xp_ih_k)^2 + (ypg-yp_ih_k)^2)^(-1/2)
