@@ -1,5 +1,11 @@
 # unused.jl
 
+# if isempty(intersection(veh_body_kd, F_ih_body_kd)) == false || isempty(intersection(F_ih_body_kd, veh_body_kd)) == false
+#     # println("collision at kd = ", kd, ", x_kd = ", x_kd)
+#     humans_safe = false
+#     break
+# end
+
 function generate_human_FRS(x_human, v_human, Dt_obs_to_kd, goal_positions)
     reach_radius = v_human * Dt_obs_to_kd
 

@@ -12,36 +12,31 @@
 #   - create separate copy of code
 
 function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, get_actions::Function, veh)
-    test = true
+    test = false
 
     # TEST ONLY ---
     if test == true
-        p1 = plot(getindex.(goal_positions,1), getindex.(goal_positions,2), label="Goals",
-            aspect_ratio=:equal, size=(500,600), linewidth=0, 
-            markershape=:circle, markersize=5,
-            xticks=0:1:6, yticks=0:1:10)
-            
-        plot!(p1, [x_k[1]], [x_k[2]], markercolor=:black, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
-        plot!(p1, state_to_body(x_k, veh))
+        p1 = plot(aspect_ratio=:equal, size=(800,800), dpi=300,
+            xticks=0:4:20, yticks=0:4:20,
+            xlabel="x-axis [m]", ylabel="y-axis [m]",
+            legend=:right)
     end
     # ---
-    
-    # define divert actions (hard-coded)
-    ia_divert_set = [1, 2, 3]
+
     Dv_max = 0.5    # NOTE: this should be pulled from one of the param structs
 
-    # generate human FRS sequence from t_k2 to t_stop_max
-    actions_k1, ia_k1_set = get_actions(x_k1, Dt_plan, veh)
-    v_k2_max = x_k1[4] + maximum(getindex.(actions_k1, 2))
-    kd_max = ceil(Int, (0.0 - v_k2_max)/(-Dv_max))
+    # generate each human FRS sequence from t_k2 to t_stop_max
+    actions_k1, ia_k1_set, _ = get_actions(x_k1, Dt_plan, veh)
 
-    # println("kd_max = ", kd_max)
+    v_k2_max = x_k1[4] + maximum(getindex.(actions_k1, 2))      # ISSUE: can reach over v_max=2.0 m/s limit
+    kd_max = ceil(Int, (0.0 - v_k2_max)/(-Dv_max)) - 1
 
     F_all_body_seq = generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
 
     # TEST ONLY ---
     if test == true
-        # println("x_k1 = ", x_k1)
+        println("x_k1 = ", x_k1)
+        println("kd_max = ", kd_max)
 
         plot!(p1, [x_k1[1]], [x_k1[2]], markercolor=:black, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
         plot!(p1, state_to_body(x_k1, veh))
@@ -56,14 +51,14 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
 
         # propagate vehicle state to state x_k2
         a_k1 = actions_k1[ia_k1]
-        x_k2, _ = propagate_state(x_k1, a_k1, Dt_plan, veh)
+        x_k2, _ = propagate_state(x_k1, a_k1, Dt_plan, veh)     # ISSUE: can reach over v_max=2.0 m/s limit
 
         # calculate time needed for divert path from new state
-        kd_stop = ceil(Int, (0.0 - x_k2[4])/(-Dv_max))
+        kd_stop = ceil(Int, (0.0 - x_k2[4])/(-Dv_max)) - 1
 
         # TEST ONLY ---
         if test == true
-            # println("\na_k1 = ", a_k1)
+            println("\nia_k1 = ", ia_k1, ", a_k1 = ", a_k1)
             # println("x_k2 = ", x_k2)
             # println("kd_stop = ", kd_stop)
             plot!(p1, [x_k2[1]], [x_k2[2]], markercolor=:black, markershape=:circle, markersize=3, markerstrokewidth=0, label="")
@@ -72,11 +67,14 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
         # ---
 
         # iterate through divert steering angles
-        for ia_d in shuffle(ia_divert_set)
-            ia_d_safe = true
+        for dpath in shuffle([1,2,3])
+            dpath_safe = true
 
             # TEST ONLY ---
-            divert_path = []
+            if test == true
+                println("dpath = ", dpath)
+                x_path_divert = []
+            end
             # ---
 
             x_kd = x_k2
@@ -85,19 +83,19 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
                 # # check if divert path is in static environment RIC
                 # val_x_kd = interp_value(x_kd, value_array, sg)
                 # if val_x_kd < -50.0
-                #   ia_d_safe = false
+                #   dpath_safe = false
                 #   break
                 # end
 
                 # check for collisions with each human
-                veh_body_kd = state_to_body(x_kd, veh)
+                veh_body_cir_kd = state_to_body_circle(x_kd, veh)
 
                 # TEST ONLY ---
                 if test == true
-                    # println("kd = ", kd, ", x_k = ", x_kd)
-                    push!(divert_path, x_kd)
-                    plot!(p1, getindex.(divert_path, 1), getindex.(divert_path, 2), label="")
-                    plot!(p1, veh_body_kd)
+                    println("kd = ", kd, ", x_k = ", x_kd)
+                    push!(x_path_divert, x_kd)
+                    plot!(p1, getindex.(x_path_divert, 1), getindex.(x_path_divert, 2), label="")
+                    plot!(p1, veh_body_cir_kd)
                 end
                 # ---
                 
@@ -112,13 +110,7 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
                     end
                     # ---
 
-                    # if isempty(intersection(veh_body_kd, F_ih_body_kd)) == false || isempty(intersection(F_ih_body_kd, veh_body_kd)) == false
-                    #     # println("collision at kd = ", kd, ", x_kd = ", x_kd)
-                    #     humans_safe = false
-                    #     break
-                    # end
-
-                    if isdisjoint(veh_body_kd, F_ih_body_kd) == false
+                    if isdisjoint(veh_body_cir_kd, F_ih_body_kd) == false
                         humans_safe = false
                         break
                     end
@@ -131,29 +123,38 @@ function shield_action_set(x_k1, nearby_human_positions, Dt_obs_to_k1, Dt_plan, 
                 # ---
 
                 if humans_safe == false
-                    ia_d_safe = false
+                    dpath_safe = false
                     break
                 end
                 
                 # propagate vehicle to next step along divert path
-                actions_kd, _ = get_actions(x_kd, Dt_plan, veh)
+                actions_kd, _, ia_divert_set = get_actions(x_kd, Dt_plan, veh)
+                ia_d = ia_divert_set[dpath]
                 a_d = actions_kd[ia_d]
 
                 x_kd1, _ = propagate_state(x_kd, a_d, Dt_plan, veh)
 
-                # println("a_d = ", a_d)
+                # TEST ONLY ---
+                if test == true
+                    println("a_d = ", a_d)
+                end 
+                # ---
 
                 # pass state to next step
                 x_kd = x_kd1
             end
 
-            if ia_d_safe == true
+            if dpath_safe == true
                 ia_k1_safe = true
                 break
             end 
         end
 
-        # println("ia_k1_safe = ", ia_k1_safe)
+        # TEST ONLY ---
+        if test == true
+            println("ia_k1_safe = ", ia_k1_safe)
+        end 
+        # ---
 
         # action is safe
         if ia_k1_safe == true
@@ -178,6 +179,8 @@ function generate_F_all_seq(nearby_human_positions, Dt_obs_to_k1, Dt_plan, v_hum
 end
 
 function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positions, kd_max)
+    test = false
+
     F_ih_seq = []
     F_ih_body_seq = []
     
@@ -190,6 +193,30 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
 
     F_ih_body_ks = minkowski_sum(F_ih_ks, h_body)
     push!(F_ih_body_seq, F_ih_body_ks)
+
+    # TEST ONLY ---
+    if test == true
+        p_F = plot(getindex.(goal_positions,1), getindex.(goal_positions,2), label="Goals",
+            aspect_ratio=:equal, size=(800,800), dpi=300,
+            linewidth=0, 
+            markershape=:circle, markersize=5,
+            xticks=0:1:20, yticks=0:1:20)
+
+        scatter!(p_F, getindex.(x_ih_ks_points, 1), getindex.(x_ih_ks_points, 2),
+            markersize=2, 
+            label="")
+
+        ks = 0
+        annotate!(10.0+ks, 5.0, ks)
+
+        display("image/png", p_F)
+
+        plot!(p_F, F_ih_body_ks,
+            label="")  
+
+        display("image/png", p_F)
+    end
+    # ---
 
     # propagate set through time steps
     for ks1 in 1:(2+kd_max)
@@ -212,6 +239,23 @@ function generate_F_ih_seq(x_ih_obs, Dt_obs_to_k1, Dt_plan, v_human, goal_positi
 
         F_ih_body_ks1 = minkowski_sum(F_ih_ks1, h_body)
         push!(F_ih_body_seq, F_ih_body_ks1)
+
+        # TEST ONLY ---
+        if test == true
+            scatter!(p_F, getindex.(x_ih_ks1_points, 1), getindex.(x_ih_ks1_points, 2),
+                markersize=2, 
+                label="")
+
+            annotate!(10.0+ks1, 5.0, ks1)
+
+            display("image/png", p_F)
+
+            plot!(p_F, F_ih_body_ks1,
+                label="")  
+
+            display("image/png", p_F)
+        end
+        # ---
 
         # pass states to next time step
         x_ih_ks_points = x_ih_ks1_points
